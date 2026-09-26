@@ -210,7 +210,9 @@ def normalise_pr(node: JSON) -> PR:
     for review in node.get("reviews", {}).get("nodes", []):
         reviewer = _actor_from_json(review.get("author"))
         edits = review.get("userContentEdits", {}).get("nodes", [])
-        versions = [(e["editedAt"], e.get("diff") or "") for e in edits] or [(review["submittedAt"], review.get("body") or "")]
+        # GitHub can return an edit with a null editedAt; date it at submission.
+        versions = [(e.get("editedAt") or review["submittedAt"], e.get("diff") or "") for e in edits] \
+            or [(review["submittedAt"], review.get("body") or "")]
         for at_raw, text in versions:
             at, score = _parse_dt(at_raw), CUBIC_SCORE_RE.search(text)
             if score and (merged is None or at <= merged):
