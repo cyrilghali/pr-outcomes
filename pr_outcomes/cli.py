@@ -198,6 +198,7 @@ Examples:
   pr-outcomes tryriot/parrot --group-by depth --repo-path ~/dev/riot/parrot
   pr-outcomes tryriot/parrot --group-by team --teams awareness,inbox,platform,simulation,sonar
   pr-outcomes tryriot/parrot --team sonar --group-by author
+  pr-outcomes tryriot/parrot --group-by size
   pr-outcomes tryriot/parrot --prs | jq '.prs[] | select(.number == 1234)'
   pr-outcomes tryriot/parrot --since 2026-08-01 --until 2026-09-18 --format table
 
@@ -221,9 +222,10 @@ def parse_args(argv=None):
     p.add_argument("--until", type=parse_date, help="YYYY-MM-DD. Default: today.")
     p.add_argument("--base", default=None, help="Base branch to filter merged PRs on. Default: the repo's default branch.")
     p.add_argument(
-        "--group-by", choices=["reviewed", "label", "author", "approver", "depth", "team"], default=None,
+        "--group-by", choices=["reviewed", "label", "author", "approver", "depth", "team", "size"], default=None,
         help="How to split PRs into groups. 'team' splits by the author's GitHub org team(s) "
-             "(see --teams). Default: one 'all' group.",
+             "(see --teams). 'size' buckets additions+deletions into xs (<100), s (100-299), "
+             "m (300-699), l (700+). Default: one 'all' group.",
     )
     p.add_argument(
         "--teams", default=None,

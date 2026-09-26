@@ -216,6 +216,19 @@ def _first_event_time(pr: PR, predicate):
     return e.at if e else None
 
 
+SIZE_BUCKETS = ("xs", "s", "m", "l")
+
+
+def size_bucket(size: int) -> str:
+    if size < 100:
+        return "xs"
+    if size < 300:
+        return "s"
+    if size < 700:
+        return "m"
+    return "l"
+
+
 def filter_by_team(prs: list[PR], teams_by_login: dict[str, set[str]], team: str) -> list[PR]:
     """Keep only PRs whose author is a member of the given GitHub org team
     slug, per the --group-by team membership map."""
@@ -267,6 +280,11 @@ def group_prs(
                     groups[team].append(pr)
             else:
                 groups["(none)"].append(pr)
+    elif group_by == "size":
+        for bucket in SIZE_BUCKETS:
+            groups[bucket]  # pre-insert so the table/JSON keep xs/s/m/l order
+        for pr in prs:
+            groups[size_bucket(facts[pr.number].size)].append(pr)
     elif group_by == "depth":
         for pr in prs:
             classes = set(facts[pr.number].approval_classes.values())

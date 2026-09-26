@@ -281,6 +281,36 @@ class FilterByTeamTests(unittest.TestCase):
         self.assertEqual(filtered, [])
 
 
+class SizeGroupTests(unittest.TestCase):
+    def test_buckets_by_additions_plus_deletions(self):
+        self.assertEqual(metrics.size_bucket(0), "xs")
+        self.assertEqual(metrics.size_bucket(99), "xs")
+        self.assertEqual(metrics.size_bucket(100), "s")
+        self.assertEqual(metrics.size_bucket(299), "s")
+        self.assertEqual(metrics.size_bucket(300), "m")
+        self.assertEqual(metrics.size_bucket(699), "m")
+        self.assertEqual(metrics.size_bucket(700), "l")
+
+    def test_group_by_size_orders_buckets_xs_s_m_l_even_when_populated_out_of_order(self):
+        prs = [pr("rounds_two"), pr("revert_pr")]
+        facts = {
+            prs[0].number: metrics.compute_all_facts([prs[0]], fix_window_days=7)[prs[0].number],
+            prs[1].number: metrics.compute_all_facts([prs[1]], fix_window_days=7)[prs[1].number],
+        }
+        # Force a known size on each so the bucketing is deterministic
+        # regardless of the fixtures' own diff size.
+        facts[prs[0].number].size = 800  # l
+        facts[prs[1].number].size = 10  # xs
+
+        groups = metrics.group_prs(prs, facts, "size")
+
+        self.assertEqual(list(groups.keys()), ["xs", "s", "m", "l"])
+        self.assertEqual({p.number for p in groups["l"]}, {prs[0].number})
+        self.assertEqual({p.number for p in groups["xs"]}, {prs[1].number})
+        self.assertEqual(groups["s"], [])
+        self.assertEqual(groups["m"], [])
+
+
 class DepthGroupTests(unittest.TestCase):
     def test_groups_by_review_depth(self):
         prs = [pr("approval_substantive"), pr("approval_rubber_stamp"), pr("no_review")]

@@ -46,12 +46,13 @@ pr-outcomes tryriot/parrot --since 2026-08-01 --group-by reviewed
 pr-outcomes tryriot/parrot --group-by depth --repo-path ~/dev/riot/parrot
 pr-outcomes tryriot/parrot --group-by team --teams awareness,inbox,platform,simulation,sonar
 pr-outcomes tryriot/parrot --team sonar --group-by author
+pr-outcomes tryriot/parrot --group-by size
 pr-outcomes tryriot/parrot --prs | jq '.prs[] | select(.number == 1234)'
 ```
 
 ```
 pr-outcomes OWNER/REPO [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--base BRANCH]
-            [--group-by reviewed|label|author|approver|depth|team] [--teams SLUG,...] [--team SLUG]
+            [--group-by reviewed|label|author|approver|depth|team|size] [--teams SLUG,...] [--team SLUG]
             [--fix-window-days 7] [--repo-path PATH]
             [--format table|json] [--json] [--prs] [--refresh] [--verbose]
 ```
@@ -63,7 +64,7 @@ Run `pr-outcomes --help` for every flag's default and an `Examples:` block.
 | `--since` | 90 days ago | |
 | `--until` | today | |
 | `--base` | repo's default branch | On `tryriot/parrot` this is `staging`, so the "Deploy to production" PRs based on `production` are excluded. |
-| `--group-by` | none (one "all" group) | `reviewed`, `label`, `author`, `approver`, `depth`, or `team`. Label, approver, and team groups can overlap: a PR with two labels, or an author on two teams, counts in both. A PR with none lands in a `(none)` group. |
+| `--group-by` | none (one "all" group) | `reviewed`, `label`, `author`, `approver`, `depth`, `team`, or `size`. Label, approver, and team groups can overlap: a PR with two labels, or an author on two teams, counts in both. A PR with none lands in a `(none)` group. `size` buckets additions+deletions: `xs` (<100), `s` (100-299), `m` (300-699), `l` (700+), always shown in that order. |
 | `--teams` | every team the author belongs to | Comma-separated GitHub org team slugs, only used with `--group-by team`, e.g. `awareness,inbox,platform,simulation,sonar`. Given without `--group-by team`, it's ignored with a warning. |
 | `--team` | none | Keep only PRs authored by a member of this single GitHub org team slug, e.g. `sonar`. Combines with any `--group-by` (`--team sonar --group-by author`). Reuses the same cached membership as `--group-by team`. An unknown slug exits 2 and lists the valid ones. |
 | `--fix-window-days` | 7 | How many days past `--until` to look for reverts and follow-up fixes. PRs merged in the last `--fix-window-days` days before `--until` have a truncated real window, since the fetch range is capped at today: for a baseline measurement, pick an `--until` at least that far in the past. |
@@ -177,6 +178,10 @@ separates anything; `depth` is the split that does.
 | `merged_within_1h`, `merged_within_24h` | The share of PRs merged within one hour, or 24 hours, of creation. |
 | `throughput_per_week` | PR count divided by the number of weeks in range. The JSON output also breaks this down by ISO week. |
 | `size` | Additions plus deletions, reported as a median and a p75. |
+
+`--group-by size` buckets PRs the same way (`xs` <100, `s` 100-299, `m`
+300-699, `l` 700+) so size can be read against outcomes: on `tryriot/parrot`
+the follow-up fix rate climbs from 1.9% for `xs` PRs to 14.3% for `m` PRs.
 
 ## Limits
 
