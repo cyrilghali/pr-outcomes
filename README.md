@@ -145,10 +145,14 @@ count on its own, since it never prompted a re-look.
 
 | Class | Meaning |
 |---|---|
-| `substantive` | They commented, a push followed that comment, and they then approved: a push strictly between their first comment and their approval. Real back-and-forth happened. |
+| `changed_by_review` | The reviewer left a comment, the author pushed a change, then that reviewer approved: a push strictly between their first comment and their approval. The one class where we can see the review changed the code. |
 | `commented` | They commented, but no push landed between that comment and their approval (including a comment and approval submitted together, even if a rebase follows before merge). |
 | `rubber_stamp` | No comment, the diff is 200+ lines, and the approval landed under 5 minutes after the PR was ready, last pushed to, or requested from them. Too fast to have been read. |
 | `silent` | Every other no-comment approval. We cannot tell if it was a real review, so we do not guess. |
+
+A higher `changed_by_review` share is not better in itself: it matters most on
+large or risky PRs, and it must not become a target, since a reviewer can
+game it with a trivial nit comment on any PR.
 
 The table also reports two more numbers. A review round is a human
 non-author review or comment, then a push, then another human review or
@@ -157,9 +161,9 @@ round. Human
 and bot comments count non-approval review bodies and inline comments
 alongside plain comments, excluding the author's own, and are reported as a mean per PR.
 
-`--group-by depth` splits PRs on these classes: `substantive-review` has at
-least one `substantive` approval, `light-review` has a human approval but
-none `substantive`, and `no-human-approval` has neither. On a repo where
+`--group-by depth` splits PRs on these classes: `changed-by-review` has at
+least one `changed_by_review` approval, `light-review` has a human approval
+but none `changed_by_review`, and `no-human-approval` has neither. On a repo where
 almost every PR gets some human approval, the plain `reviewed` split barely
 separates anything; `depth` is the split that does.
 

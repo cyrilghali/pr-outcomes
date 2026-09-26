@@ -16,7 +16,7 @@ DEFINITIONS = {
     "revert_count": "Number of PRs later reverted by another PR.",
     "followup_fix_rate": "Share of PRs later blamed for a follow-up fix, within the fix window (0-1); null without --repo-path.",
     "followup_fix_count": "Number of PRs later blamed for a follow-up fix; null without --repo-path.",
-    "approval_share_substantive": "Share of approvals that were substantive: commented, then a push, then approved (0-1).",
+    "approval_share_changed_by_review": "Share of approvals where the reviewer commented, the author pushed a change, then that reviewer approved (0-1).",
     "approval_share_commented": "Share of approvals where the reviewer commented but no push followed before approving (0-1).",
     "approval_share_silent": "Share of approvals with no comment, not classified as rubber-stamp (0-1).",
     "approval_share_rubber_stamp": "Share of approvals on a 200+ line diff that landed under 5 minutes after ready/push/request (0-1).",
@@ -48,7 +48,7 @@ OUTCOMES_ROWS = [
     ("followup_fix_rate", "Follow-up fix rate"),
 ]
 REVIEW_DEPTH_ROWS = [
-    ("approval_share_substantive", "Approvals: substantive"),
+    ("approval_share_changed_by_review", "Approvals: changed by review"),
     ("approval_share_commented", "Approvals: commented"),
     ("approval_share_silent", "Approvals: silent"),
     ("approval_share_rubber_stamp", "Approvals: rubber-stamp"),
@@ -86,7 +86,7 @@ def _fmt_share(value) -> str:
 
 
 SHARE_KEYS = {
-    "revert_rate", "followup_fix_rate", "approval_share_substantive",
+    "revert_rate", "followup_fix_rate", "approval_share_changed_by_review",
     "approval_share_commented", "approval_share_silent", "approval_share_rubber_stamp",
     "review_rounds_ge1_share", "merged_within_1h", "merged_within_24h",
 }

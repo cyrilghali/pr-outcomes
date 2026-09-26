@@ -100,11 +100,12 @@ def compute_approval_classes(pr: PR) -> dict:
         )
         if reviewer_comments:
             first_comment = reviewer_comments[0]
-            # substantive requires the push between the comment and this same
-            # approval; a push before the comment or after the approval (e.g.
-            # a rebase right before merge) proves nothing was re-reviewed.
+            # changed_by_review requires the push between the comment and
+            # this same approval; a push before the comment or after the
+            # approval (e.g. a rebase right before merge) proves nothing was
+            # re-reviewed.
             pushed_between = any(first_comment < p < approval_time for p in pushes)
-            classes[login] = "substantive" if pushed_between else "commented"
+            classes[login] = "changed_by_review" if pushed_between else "commented"
             continue
 
         last_push_before = max((p for p in pushes if p < approval_time), default=None)
@@ -263,8 +264,8 @@ def group_prs(
     elif group_by == "depth":
         for pr in prs:
             classes = set(facts[pr.number].approval_classes.values())
-            if "substantive" in classes:
-                groups["substantive-review"].append(pr)
+            if "changed_by_review" in classes:
+                groups["changed-by-review"].append(pr)
             elif classes:
                 groups["light-review"].append(pr)
             else:
@@ -334,7 +335,7 @@ def aggregate_group(prs: list[PR], facts: dict, since: date, until: date) -> dic
     all_classes = [cls for f in group_facts for cls in f.approval_classes.values()]
     n_approvals = len(all_classes)
     class_counts = Counter(all_classes)
-    for cls in ("substantive", "commented", "silent", "rubber_stamp"):
+    for cls in ("changed_by_review", "commented", "silent", "rubber_stamp"):
         out[f"approval_share_{cls}"] = _share(class_counts.get(cls, 0), n_approvals)
     out["approval_count"] = n_approvals
 

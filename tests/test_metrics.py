@@ -35,9 +35,9 @@ class ReviewRoundsTests(unittest.TestCase):
 
 
 class ApprovalClassTests(unittest.TestCase):
-    def test_substantive(self):
+    def test_changed_by_review(self):
         classes = metrics.compute_approval_classes(pr("approval_substantive"))
-        self.assertEqual(classes["carol"], "substantive")
+        self.assertEqual(classes["carol"], "changed_by_review")
 
     def test_commented(self):
         classes = metrics.compute_approval_classes(pr("approval_commented"))
@@ -277,7 +277,7 @@ class DepthGroupTests(unittest.TestCase):
             size=0, changed_files=0, reviewed_group="", approval_classes=metrics.compute_approval_classes(p),
         ) for p in prs}
         groups = metrics.group_prs(prs, facts, "depth")
-        self.assertEqual({n.number for n in groups["substantive-review"]}, {pr("approval_substantive").number})
+        self.assertEqual({n.number for n in groups["changed-by-review"]}, {pr("approval_substantive").number})
         self.assertEqual({n.number for n in groups["light-review"]}, {pr("approval_rubber_stamp").number})
         self.assertEqual({n.number for n in groups["no-human-approval"]}, {pr("no_review").number})
 
