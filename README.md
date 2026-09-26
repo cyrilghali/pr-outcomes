@@ -13,35 +13,71 @@ logged in (`gh auth status`).
 uv tool install -e .
 ```
 
+## For agents
+
+Output is JSON by default whenever stdout isn't a TTY (a pipe, a captured
+subprocess output), and a human-readable table when it is; `--format
+table|json` picks explicitly, and `--json` is a shorthand for `--format
+json`. The default JSON payload stays small (a few KB): pass `--prs` to also
+get per-PR facts under `"prs"`. Every metric key in `"groups"` has a one-line
+explanation with its unit under `"definitions"`, so a payload is
+self-describing without this README. A `"warnings"` array names anything
+that makes a metric null or a window shorter than expected (e.g. follow-up
+fixes need `--repo-path`, a truncated GitHub connection, a truncated
+revert/fix window); every warning is also printed to stderr.
+
+The exit code is `0` on success, `1` on a GitHub or git error (gh/git's own
+stderr plus one corrective line: `gh auth status` for auth, spelling/access
+for not-found, retry later for rate limits), and `2` on a usage error (bad
+flags, a malformed repo or date). Progress lines (`cache hit`, `fetching`)
+print only when stderr is a TTY or `--verbose` is passed, so piped stderr
+stays limited to warnings and errors.
+
+A cold first run on a busy repo takes ~20+ minutes: GitHub's GraphQL API
+forces one request per PR's timeline (see below), fetched four at a time. A
+cached rerun of the same range takes ~2 minutes. Run the first cold run in
+the background, or in the foreground with a generous timeout.
+
 ## Usage
 
 ```
 pr-outcomes tryriot/parrot --since 2026-08-01
-pr-outcomes tryriot/parrot --since 2026-08-01 --group-by reviewed --json
+pr-outcomes tryriot/parrot --since 2026-08-01 --group-by reviewed
+pr-outcomes tryriot/parrot --group-by depth --repo-path ~/dev/riot/parrot
+pr-outcomes tryriot/parrot --group-by team --teams awareness,inbox,platform,simulation,sonar
+pr-outcomes tryriot/parrot --prs | jq '.prs[] | select(.number == 1234)'
 ```
 
 ```
 pr-outcomes OWNER/REPO [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--base BRANCH]
-            [--group-by reviewed|label|author|approver|depth] [--fix-window-days 7]
-            [--repo-path PATH] [--json] [--refresh]
+            [--group-by reviewed|label|author|approver|depth|team] [--teams SLUG,...]
+            [--fix-window-days 7] [--repo-path PATH]
+            [--format table|json] [--json] [--prs] [--refresh] [--verbose]
 ```
+
+Run `pr-outcomes --help` for every flag's default and an `Examples:` block.
 
 | Flag | Default | Notes |
 |---|---|---|
 | `--since` | 90 days ago | |
 | `--until` | today | |
 | `--base` | repo's default branch | On `tryriot/parrot` this is `staging`, so the "Deploy to production" PRs based on `production` are excluded. |
-| `--group-by` | none (one "all" group) | `reviewed`, `label`, `author`, `approver`, or `depth`. Label and approver groups can overlap: a PR with two labels counts in both. A PR with none lands in a `(none)` group. |
+| `--group-by` | none (one "all" group) | `reviewed`, `label`, `author`, `approver`, `depth`, or `team`. Label, approver, and team groups can overlap: a PR with two labels, or an author on two teams, counts in both. A PR with none lands in a `(none)` group. |
+| `--teams` | every team the author belongs to | Comma-separated GitHub org team slugs, only used with `--group-by team`, e.g. `awareness,inbox,platform,simulation,sonar`. |
 | `--fix-window-days` | 7 | How many days past `--until` to look for reverts and follow-up fixes. PRs merged in the last `--fix-window-days` days before `--until` have a truncated real window, since the fetch range is capped at today: for a baseline measurement, pick an `--until` at least that far in the past. |
-| `--repo-path` | none | Local clone to blame-attribute follow-up fixes against (see below). Only local git commands are run; the clone is never fetched or written to. Without it, follow-up-fix metrics are null (`-` in the table). |
-| `--json` | off | Machine-readable output instead of the table. |
-| `--refresh` | off | Bypass the on-disk PR and blame caches. |
+| `--repo-path` | none | Local clone to blame-attribute follow-up fixes against (see below). Only local git commands are run; the clone is never fetched or written to. Without it, follow-up-fix metrics are null (`-` in the table, `null` in JSON). |
+| `--format` | `json` when piped, `table` when a TTY | `--json` is a shorthand for `--format json`. |
+| `--prs` | off | Include per-PR facts (JSON: under `"prs"`; table: a JSON block printed after the table). |
+| `--refresh` | off | Bypass the on-disk PR, blame, and team caches. |
+| `--verbose` | off | Print progress lines (`cache hit` / `fetching`) even when stderr isn't a TTY. |
 
 The cache lives at `~/.cache/pr-outcomes/`. Older weekly chunks are cached
 forever, and only the current week is refetched, so a second run against the
 same range is fast. Blame attribution is cached per commit sha under
 `blame/<sha>.json`, since a fix PR's attribution depends only on that commit
-and never changes; uncached commits are blamed in parallel.
+and never changes; uncached commits are blamed in parallel. Org team
+membership is cached at `<owner>__<repo>/teams.json`, refetched once a day or
+on `--refresh`.
 
 GitHub's GraphQL API silently truncates a PR's timeline (commits, force
 pushes, ready-for-review, review-requested) when one request resolves
@@ -50,8 +86,18 @@ it happened. To avoid that, each PR's timeline is fetched in its own request,
 after the search page that lists the PRs; the fetches run four at a time.
 Other connections (reviews, comments, review threads) are still fetched
 inside the search query. If GitHub truncates one of those too, the
-tool prints one warning per affected PR to stderr instead of silently
-under-counting.
+tool prints one warning per affected PR to stderr (and into the JSON
+`"warnings"` array) instead of silently under-counting.
+
+### `--group-by team`
+
+Team membership comes from the GitHub org, not the repo: `gh api
+orgs/<owner>/teams` plus each team's `members` endpoint (read-only, cached
+and refetched daily). An author on no selected team, or on none at all,
+lands in `(none)`; if the repo's owner is a user account rather than an org,
+the teams API 404s and every PR falls back to `(none)`, with a warning
+either way. Membership reflects today, not the PR's merge date, and the tool
+always warns about that when `--group-by team` is used.
 
 ## Metrics
 
