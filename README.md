@@ -35,11 +35,13 @@ pr-outcomes OWNER/REPO [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--base BRANCH]
 | `--fix-window-days` | 7 | How many days past `--until` to look for reverts and follow-up fixes. |
 | `--repo-path` | none | Local clone to blame-attribute follow-up fixes against (see below). Only local git commands are run; the clone is never fetched or written to. Without it, follow-up-fix metrics are null (`-` in the table). |
 | `--json` | off | Machine-readable output instead of the table. |
-| `--refresh` | off | Bypass the on-disk cache. |
+| `--refresh` | off | Bypass the on-disk PR and blame caches. |
 
 The cache lives at `~/.cache/pr-outcomes/`. Older weekly chunks are cached
 forever, and only the current week is refetched, so a second run against the
-same range is fast.
+same range is fast. Blame attribution is cached per commit sha under
+`blame/<sha>.json`, since a fix PR's attribution depends only on that commit
+and never changes; uncached commits are blamed in parallel.
 
 ## Metrics
 

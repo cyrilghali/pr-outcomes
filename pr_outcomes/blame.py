@@ -6,11 +6,15 @@ pure and takes that mapping as input."""
 
 from __future__ import annotations
 
+import json
+import os
 import re
 import subprocess
+import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 
-from pr_outcomes.fetch import PR
+from pr_outcomes.fetch import CACHE_ROOT, PR
 from pr_outcomes.metrics import FOLLOWUP_TITLE_RE, LOCKFILES, is_revert_title
 
 MERGE_SUBJECT_RE = re.compile(r"Merge pull request #(\d+)")
@@ -102,7 +106,39 @@ def _blame_introducing_prs(repo_path: str, commit: str, sha_to_pr: dict[str, int
     return introducing
 
 
-def compute_followup_fixes(repo_path: str, base: str, prs: list[PR], fix_window_days: int) -> dict[int, set[int]]:
+def _blame_cache_path(owner: str, name: str, sha: str) -> str:
+    return os.path.join(CACHE_ROOT, f"{owner}__{name}", "blame", f"{sha}.json")
+
+
+def _load_cached_blame(owner: str, name: str, sha: str) -> set[int] | None:
+    path = _blame_cache_path(owner, name, sha)
+    if not os.path.exists(path):
+        return None
+    with open(path) as f:
+        return set(json.load(f))
+
+
+def _save_cached_blame(owner: str, name: str, sha: str, introducing: set[int]) -> None:
+    path = _blame_cache_path(owner, name, sha)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    fd, tmp_path = tempfile.mkstemp(dir=os.path.dirname(path))
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(sorted(introducing), f)
+        os.replace(tmp_path, path)
+    except BaseException:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+        raise
+
+
+def compute_followup_fixes(
+    repo_path: str, owner: str, name: str, base: str, prs: list[PR], fix_window_days: int,
+    refresh: bool = False,
+) -> dict[int, set[int]]:
+    """The unfiltered blame result (introducing PRs before the fix-window
+    check) is cached per commit sha, since it never changes; the window
+    filter stays here because it depends on --fix-window-days."""
     sha_to_pr = build_sha_to_pr(repo_path, base)
     pr_to_sha: dict[int, str] = {}
     for sha, number in sha_to_pr.items():
@@ -110,15 +146,40 @@ def compute_followup_fixes(repo_path: str, base: str, prs: list[PR], fix_window_
 
     merged_by_number = {pr.number: pr.merged for pr in prs if pr.merged}
 
-    result: dict[int, set[int]] = {}
+    candidates: list[tuple[PR, str]] = []
     for pr in prs:
         if pr.merged is None or is_revert_title(pr.title) or not FOLLOWUP_TITLE_RE.match(pr.title):
             continue
         commit = pr_to_sha.get(pr.number)
-        if commit is None:
+        if commit is not None:
+            candidates.append((pr, commit))
+
+    introducing_by_commit: dict[str, set[int]] = {}
+    to_compute: list[str] = []
+    for _, commit in candidates:
+        if commit in introducing_by_commit or commit in to_compute:
             continue
+        cached = None if refresh else _load_cached_blame(owner, name, commit)
+        if cached is not None:
+            introducing_by_commit[commit] = cached
+        else:
+            to_compute.append(commit)
+
+    if to_compute:
+        with ThreadPoolExecutor(max_workers=os.cpu_count()) as pool:
+            futures = {
+                commit: pool.submit(_blame_introducing_prs, repo_path, commit, sha_to_pr)
+                for commit in to_compute
+            }
+            for commit, future in futures.items():
+                introducing = future.result()
+                introducing_by_commit[commit] = introducing
+                _save_cached_blame(owner, name, commit, introducing)
+
+    result: dict[int, set[int]] = {}
+    for pr, commit in candidates:
         matched = set()
-        for candidate in _blame_introducing_prs(repo_path, commit, sha_to_pr):
+        for candidate in introducing_by_commit.get(commit, set()):
             if candidate == pr.number or candidate not in merged_by_number:
                 continue
             delta = pr.merged - merged_by_number[candidate]

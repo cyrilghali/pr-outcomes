@@ -160,7 +160,9 @@ def main(argv=None) -> int:
     followup_map = None
     if args.repo_path:
         try:
-            followup_map = blame.compute_followup_fixes(args.repo_path, base, all_prs, args.fix_window_days)
+            followup_map = blame.compute_followup_fixes(
+                args.repo_path, owner, name, base, all_prs, args.fix_window_days, refresh=args.refresh,
+            )
         except blame.BlameError as e:
             print(f"pr-outcomes: blame error: {e}", file=sys.stderr)
             return 1

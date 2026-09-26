@@ -1,3 +1,4 @@
+import tempfile
 import unittest
 
 from pr_outcomes import blame
@@ -57,6 +58,19 @@ class DiffHunkParserTests(unittest.TestCase):
         )
         hunks = blame.parse_diff_hunks(diff_text)
         self.assertEqual(hunks, {"a.ex": [(1, 2)], "b.ex": [(5, 1)]})
+
+
+class BlameCacheTests(unittest.TestCase):
+    def test_round_trip(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            old_root = blame.CACHE_ROOT
+            blame.CACHE_ROOT = tmp
+            try:
+                self.assertIsNone(blame._load_cached_blame("o", "r", "deadbeef"))
+                blame._save_cached_blame("o", "r", "deadbeef", {12, 34})
+                self.assertEqual(blame._load_cached_blame("o", "r", "deadbeef"), {12, 34})
+            finally:
+                blame.CACHE_ROOT = old_root
 
 
 if __name__ == "__main__":
