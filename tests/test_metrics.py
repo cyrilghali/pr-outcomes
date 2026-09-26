@@ -50,24 +50,23 @@ class RevertTests(unittest.TestCase):
 
 
 class FollowupFixTests(unittest.TestCase):
-    def test_shared_file_matches(self):
+    """followup_fix comes from a caller-supplied blame mapping (see
+    blame.compute_followup_fixes); metrics.py just consumes it."""
+
+    def test_mapping_marks_introducing_pr(self):
         original = pr("followup_match_original")
         fix = pr("followup_match_fix")
-        fixes = metrics.find_followups(original, [original, fix], set(metrics.LOCKFILES), fix_window_days=7)
-        self.assertEqual(fixes, [501])
+        facts = metrics.compute_all_facts([original, fix], fix_window_days=7, followup_by_fix={501: {500}})
+        self.assertTrue(facts[500].followup_fix)
+        self.assertEqual(facts[500].followup_fix_by, [501])
+        self.assertFalse(facts[501].followup_fix)
 
-    def test_hot_file_ignored(self):
-        original = pr("followup_hotfile_original")
-        fix = pr("followup_hotfile_fix")
-        hot_files = {"lib/config.ex"}
-        fixes = metrics.find_followups(original, [original, fix], hot_files, fix_window_days=7)
-        self.assertEqual(fixes, [])
-
-    def test_lockfile_ignored(self):
-        original = pr("followup_lockfile_original")
-        fix = pr("followup_lockfile_fix")
-        fixes = metrics.find_followups(original, [original, fix], set(metrics.LOCKFILES), fix_window_days=7)
-        self.assertEqual(fixes, [])
+    def test_no_repo_path_leaves_followup_fix_null(self):
+        original = pr("followup_match_original")
+        fix = pr("followup_match_fix")
+        facts = metrics.compute_all_facts([original, fix], fix_window_days=7, followup_by_fix=None)
+        self.assertIsNone(facts[500].followup_fix)
+        self.assertEqual(facts[500].followup_fix_by, [])
 
 
 class ReviewedGroupTests(unittest.TestCase):
@@ -98,12 +97,20 @@ class TimeAndAggregateTests(unittest.TestCase):
         self.assertIsNone(p75)
 
 
-class HotFilesTests(unittest.TestCase):
-    def test_includes_lockfiles_and_hot_paths(self):
-        prs = [pr("followup_match_original"), pr("followup_match_fix")]
-        hot = metrics.compute_hot_files(prs)
-        self.assertIn("mix.lock", hot)  # lockfiles always included
-        self.assertIn("lib/parser.ex", hot)  # touched by both PRs in this tiny set
+class DepthGroupTests(unittest.TestCase):
+    def test_groups_by_review_depth(self):
+        prs = [pr("approval_substantive"), pr("approval_rubber_stamp"), pr("no_review")]
+        facts = {p.number: metrics.PRFacts(
+            number=p.number,
+            time_to_first_human_review_h=None, time_to_first_bot_review_h=None,
+            time_to_first_approval_h=None, time_to_merge_h=None, ready_to_merge_h=None,
+            review_rounds=0, changes_requested=0, human_comments=0, bot_comments=0,
+            size=0, changed_files=0, reviewed_group="", approval_classes=metrics.compute_approval_classes(p),
+        ) for p in prs}
+        groups = metrics.group_prs(prs, facts, "depth")
+        self.assertEqual({n.number for n in groups["substantive-review"]}, {pr("approval_substantive").number})
+        self.assertEqual({n.number for n in groups["light-review"]}, {pr("approval_rubber_stamp").number})
+        self.assertEqual({n.number for n in groups["no-human-approval"]}, {pr("no_review").number})
 
 
 if __name__ == "__main__":

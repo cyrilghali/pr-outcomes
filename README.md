@@ -22,8 +22,8 @@ pr-outcomes tryriot/parrot --since 2026-08-01 --group-by reviewed --json
 
 ```
 pr-outcomes OWNER/REPO [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--base BRANCH]
-            [--group-by reviewed|label|author|approver] [--fix-window-days 7]
-            [--json] [--refresh]
+            [--group-by reviewed|label|author|approver|depth] [--fix-window-days 7]
+            [--repo-path PATH] [--json] [--refresh]
 ```
 
 | Flag | Default | Notes |
@@ -31,8 +31,9 @@ pr-outcomes OWNER/REPO [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--base BRANCH]
 | `--since` | 90 days ago | |
 | `--until` | today | |
 | `--base` | repo's default branch | On `tryriot/parrot` this is `staging`, so the "Deploy to production" PRs based on `production` are excluded. |
-| `--group-by` | none (one "all" group) | `reviewed`, `label`, `author`, or `approver`. Label and approver groups can overlap: a PR with two labels counts in both. A PR with none lands in a `(none)` group. |
+| `--group-by` | none (one "all" group) | `reviewed`, `label`, `author`, `approver`, or `depth`. Label and approver groups can overlap: a PR with two labels counts in both. A PR with none lands in a `(none)` group. |
 | `--fix-window-days` | 7 | How many days past `--until` to look for reverts and follow-up fixes. |
+| `--repo-path` | none | Local clone to blame-attribute follow-up fixes against (see below). Only local git commands are run; the clone is never fetched or written to. Without it, follow-up-fix metrics are null (`-` in the table). |
 | `--json` | off | Machine-readable output instead of the table. |
 | `--refresh` | off | Bypass the on-disk cache. |
 
@@ -53,7 +54,23 @@ landing just after the window still counts.
 | Metric | Definition |
 |---|---|
 | `revert_rate` | The share of PRs later reverted by another PR. A revert is GitHub's revert button or a `revert`-prefixed title, matched back to the original by issue reference, URL, or exact title. The denominator excludes revert PRs themselves. |
-| `followup_fix_rate` | The share of PRs followed within the fix window by a merged PR titled `fix:`, `hotfix:`, or `bugfix:` that touches at least one file in common. Lockfiles and "hot" files, touched by more than 5% of all fetched PRs such as shared config or generated files, are ignored, since they would otherwise look coupled to every PR. |
+| `followup_fix_rate` | The share of PRs later blamed as having introduced a bug that a fix PR corrected, within the fix window. Requires `--repo-path`; without it this metric is null. |
+
+Follow-up fixes are found by blame attribution, SZZ-style, not file overlap.
+For every merged PR titled `fix:`, `hotfix:`, or `bugfix:` that is not a
+revert, we diff its merge commit against its parent, take the old-side line
+ranges it changed or deleted (a pure addition carries no blame), and run
+`git blame` on those ranges in the parent commit. Each blamed commit is
+mapped back to the PR that merged it, using `git log --first-parent`, and
+that PR counts as followed up by the fix if it merged no earlier than the
+fix and within `--fix-window-days` of it. Lockfiles are excluded, matching
+the revert metric.
+
+A fix whose diff only adds lines is not attributed to anything, since there
+are no old lines to blame. A fix whose title lacks a recognised
+`fix:`/`hotfix:`/`bugfix:` prefix is missed entirely. Only local git history
+is read, never GitHub state, so this needs a local clone passed through
+`--repo-path`.
 
 ### Review depth
 
@@ -72,6 +89,12 @@ non-author review or comment followed by a push before the next one; we
 report the mean per PR and the share of PRs with at least one round. Human
 and bot comments count review bodies and inline comments alongside plain
 comments, excluding the author's own, and are reported as a mean per PR.
+
+`--group-by depth` splits PRs on these classes: `substantive-review` has at
+least one `substantive` approval, `light-review` has a human approval but
+none `substantive`, and `no-human-approval` has neither. On a repo where
+almost every PR gets some human approval, the plain `reviewed` split barely
+separates anything; `depth` is the split that does.
 
 ### Speed
 

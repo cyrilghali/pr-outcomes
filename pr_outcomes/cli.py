@@ -7,7 +7,7 @@ import json
 import sys
 from datetime import date, datetime, timedelta
 
-from pr_outcomes import fetch, metrics
+from pr_outcomes import blame, fetch, metrics
 
 OUTCOMES_ROWS = [
     ("revert_rate", "Revert rate"),
@@ -125,8 +125,13 @@ def parse_args(argv=None):
     p.add_argument("--since", type=lambda s: datetime.strptime(s, "%Y-%m-%d").date())
     p.add_argument("--until", type=lambda s: datetime.strptime(s, "%Y-%m-%d").date())
     p.add_argument("--base", default=None)
-    p.add_argument("--group-by", choices=["reviewed", "label", "author", "approver"], default=None)
+    p.add_argument("--group-by", choices=["reviewed", "label", "author", "approver", "depth"], default=None)
     p.add_argument("--fix-window-days", type=int, default=7)
+    p.add_argument(
+        "--repo-path", default=None,
+        help="Local clone for blame-based follow-up-fix attribution (local git only, never fetches). "
+             "Without it, follow-up-fix metrics are null.",
+    )
     p.add_argument("--json", action="store_true")
     p.add_argument("--refresh", action="store_true")
     return p.parse_args(argv)
@@ -152,7 +157,17 @@ def main(argv=None) -> int:
         print(f"pr-outcomes: gh error: {e}", file=sys.stderr)
         return 1
 
-    facts = metrics.compute_all_facts(all_prs, args.fix_window_days)
+    followup_map = None
+    if args.repo_path:
+        try:
+            followup_map = blame.compute_followup_fixes(args.repo_path, base, all_prs, args.fix_window_days)
+        except blame.BlameError as e:
+            print(f"pr-outcomes: blame error: {e}", file=sys.stderr)
+            return 1
+    else:
+        print("pr-outcomes: follow-up fixes need --repo-path", file=sys.stderr)
+
+    facts = metrics.compute_all_facts(all_prs, args.fix_window_days, followup_map)
     reportable = [pr for pr in all_prs if pr.merged and since <= pr.merged.date() <= until]
 
     groups_prs = metrics.group_prs(reportable, facts, args.group_by)

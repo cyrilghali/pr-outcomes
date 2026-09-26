@@ -7,14 +7,13 @@ from __future__ import annotations
 import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
-from datetime import date, timedelta
+from datetime import date
 
 from pr_outcomes.fetch import PR
 
 # Approval-class thresholds, named so the "why" travels with the number.
 RUBBER_STAMP_MIN_SIZE = 200  # below this a fast approval could still be a real read of a tiny diff
 RUBBER_STAMP_MAX_MINUTES = 5  # GitHub's own "too fast to have been read" bar for a big diff
-HOT_FILE_SHARE = 0.05  # files touched by >5% of PRs are shared/config noise, not a real coupling signal
 LOCKFILES = {"mix.lock", "package-lock.json", "yarn.lock", "pnpm-lock.yaml"}
 
 FOLLOWUP_TITLE_RE = re.compile(r"^(fix|hotfix|bugfix)\b", re.IGNORECASE)
@@ -49,7 +48,7 @@ class PRFacts:
     is_revert: bool = False
     reverted: bool = False
     reverted_by: list = field(default_factory=list)
-    followup_fix: bool = False
+    followup_fix: bool | None = False  # None means not computed (no --repo-path)
     followup_fix_by: list = field(default_factory=list)
     labels: list = field(default_factory=list)
     author: str = ""
@@ -131,17 +130,6 @@ def compute_reviewed_group(pr: PR) -> str:
     return "no-review"
 
 
-def compute_hot_files(prs: list[PR]) -> set[str]:
-    if not prs:
-        return set(LOCKFILES)
-    counts = Counter()
-    for pr in prs:
-        counts.update(set(pr.files))
-    threshold = HOT_FILE_SHARE * len(prs)
-    hot = {path for path, n in counts.items() if n > threshold}
-    return hot | LOCKFILES
-
-
 def find_original(revert_pr: PR, prs_by_number: dict) -> PR | None:
     for m in re.finditer(r"#(\d+)", revert_pr.body):
         num = int(m.group(1))
@@ -175,39 +163,24 @@ def compute_reverts(prs: list[PR]) -> dict:
     return dict(reverted_by)
 
 
-def find_followups(pr: PR, prs: list[PR], hot_files: set[str], fix_window_days: int) -> list[int]:
-    if pr.merged is None:
-        return []
-    relevant_files = set(pr.files) - hot_files
-    if not relevant_files:
-        return []
-    window_end = pr.merged + timedelta(days=fix_window_days)
-    fixes = []
-    for q in prs:
-        if q.number == pr.number or q.merged is None:
-            continue
-        if not (pr.merged < q.merged <= window_end):
-            continue
-        if is_revert_title(q.title):
-            continue
-        if not FOLLOWUP_TITLE_RE.match(q.title):
-            continue
-        shared = (relevant_files & set(q.files)) - hot_files
-        if shared:
-            fixes.append(q.number)
-    return fixes
-
-
-def compute_all_facts(prs: list[PR], fix_window_days: int) -> dict:
+def compute_all_facts(prs: list[PR], fix_window_days: int, followup_by_fix: dict[int, set[int]] | None = None) -> dict:
     """Per-PR facts for the whole fetched set (needed because reverts and
-    follow-up fixes can land after --until)."""
-    hot_files = compute_hot_files(prs)
+    follow-up fixes can land after --until). `followup_by_fix` is the
+    fix-PR -> introducing-PRs mapping from `blame.compute_followup_fixes`;
+    pass None when --repo-path wasn't given, which leaves followup_fix
+    unset (null) on every PR rather than guessing."""
     reverted_by = compute_reverts(prs)
     revert_numbers = {n for pr in prs if is_revert_title(pr.title) for n in [pr.number]}
 
+    followups_by_introducing: dict[int, list[int]] = defaultdict(list)
+    if followup_by_fix is not None:
+        for fix_number, introducing_numbers in followup_by_fix.items():
+            for introducing_number in introducing_numbers:
+                followups_by_introducing[introducing_number].append(fix_number)
+
     facts = {}
     for pr in prs:
-        followups = find_followups(pr, prs, hot_files, fix_window_days)
+        followups = followups_by_introducing.get(pr.number, [])
         facts[pr.number] = PRFacts(
             number=pr.number,
             time_to_first_human_review_h=_hours(pr.created, _first_event_time(pr, lambda e: e.kind in ("review", "comment") and _is_human_reviewer(pr, e.actor))),
@@ -226,7 +199,7 @@ def compute_all_facts(prs: list[PR], fix_window_days: int) -> dict:
             is_revert=pr.number in revert_numbers,
             reverted=pr.number in reverted_by,
             reverted_by=reverted_by.get(pr.number, []),
-            followup_fix=bool(followups),
+            followup_fix=None if followup_by_fix is None else bool(followups),
             followup_fix_by=followups,
             labels=pr.labels,
             author=pr.author.login,
@@ -266,6 +239,15 @@ def group_prs(prs: list[PR], facts: dict, group_by: str | None) -> dict:
                     groups[login].append(pr)
             else:
                 groups["(none)"].append(pr)
+    elif group_by == "depth":
+        for pr in prs:
+            classes = set(facts[pr.number].approval_classes.values())
+            if "substantive" in classes:
+                groups["substantive-review"].append(pr)
+            elif classes:
+                groups["light-review"].append(pr)
+            else:
+                groups["no-human-approval"].append(pr)
     else:
         raise ValueError(f"unknown group-by: {group_by}")
     return dict(groups)
@@ -315,11 +297,17 @@ def aggregate_group(prs: list[PR], facts: dict, since: date, until: date) -> dic
 
     # Outcomes
     reverted_count = sum(1 for f in non_revert if f.reverted)
-    followup_count = sum(1 for f in non_revert if f.followup_fix)
     out["revert_rate"] = _share(reverted_count, n_non_revert)
     out["revert_count"] = reverted_count
-    out["followup_fix_rate"] = _share(followup_count, n_non_revert)
-    out["followup_fix_count"] = followup_count
+
+    followup_facts = [f for f in non_revert if f.followup_fix is not None]
+    if followup_facts:
+        followup_count = sum(1 for f in followup_facts if f.followup_fix)
+        out["followup_fix_rate"] = _share(followup_count, len(followup_facts))
+        out["followup_fix_count"] = followup_count
+    else:
+        out["followup_fix_rate"] = None
+        out["followup_fix_count"] = None
 
     # Review depth
     all_classes = [cls for f in group_facts for cls in f.approval_classes.values()]
