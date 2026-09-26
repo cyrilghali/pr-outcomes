@@ -270,17 +270,16 @@ def _cache_path(owner: str, name: str, base: str, frm: date, to: date) -> str:
     )
 
 
-def _warn_truncated_connections(nodes: list[dict]) -> None:
+def _warn_truncated_connections(nodes: list[dict], warnings: list[str]) -> None:
     for n in nodes:
         for key in TRUNCATION_WARNING_KEYS:
             conn = n.get(key) or {}
             total = conn.get("totalCount")
             returned = len(conn.get("nodes", []))
             if total is not None and total > returned:
-                print(
-                    f"pr-outcomes: PR #{n.get('number')} {key} truncated ({returned}/{total}, not refetched)",
-                    file=sys.stderr,
-                )
+                msg = f"PR #{n.get('number')} {key} truncated ({returned}/{total}, not refetched)"
+                print(f"pr-outcomes: {msg}", file=sys.stderr)
+                warnings.append(msg)
 
 
 def _fetch_pr_timeline(owner: str, name: str, number: int) -> list[dict]:
@@ -298,7 +297,7 @@ def _fetch_pr_timeline(owner: str, name: str, number: int) -> list[dict]:
     return nodes
 
 
-def _fetch_chunk_nodes(owner: str, name: str, base: str, frm: date, to: date) -> list[dict]:
+def _fetch_chunk_nodes(owner: str, name: str, base: str, frm: date, to: date, warnings: list[str]) -> list[dict]:
     q = f"repo:{owner}/{name} is:pr is:merged base:{base} merged:{frm.isoformat()}..{to.isoformat()}"
     nodes: list[dict] = []
     cursor = None
@@ -312,7 +311,7 @@ def _fetch_chunk_nodes(owner: str, name: str, base: str, frm: date, to: date) ->
             break
         cursor = page_info["endCursor"]
 
-    _warn_truncated_connections(nodes)
+    _warn_truncated_connections(nodes, warnings)
 
     # One request per PR, so GitHub's silent per-request truncation of
     # timelineItems (see the QUERY comment above) can't drop force-pushes.
@@ -334,7 +333,7 @@ def _chunk_reusable(path: str, to: date) -> bool:
     return mtime > chunk_end
 
 
-def _load_or_fetch_chunk(owner: str, name: str, base: str, frm: date, to: date, refresh: bool) -> list[dict]:
+def _load_or_fetch_chunk(owner: str, name: str, base: str, frm: date, to: date, refresh: bool, warnings: list[str]) -> list[dict]:
     path = _cache_path(owner, name, base, frm, to)
     if not refresh and _chunk_reusable(path, to):
         print(f"pr-outcomes: cache hit {frm}..{to}", file=sys.stderr)
@@ -343,7 +342,7 @@ def _load_or_fetch_chunk(owner: str, name: str, base: str, frm: date, to: date, 
 
     print(f"pr-outcomes: fetching {owner}/{name} {frm}..{to}", file=sys.stderr)
     started = time.time()
-    nodes = _fetch_chunk_nodes(owner, name, base, frm, to)
+    nodes = _fetch_chunk_nodes(owner, name, base, frm, to, warnings)
 
     os.makedirs(os.path.dirname(path), exist_ok=True)
     fd, tmp_path = tempfile.mkstemp(dir=os.path.dirname(path))
@@ -361,13 +360,17 @@ def _load_or_fetch_chunk(owner: str, name: str, base: str, frm: date, to: date, 
     return nodes
 
 
-def fetch_prs(owner: str, name: str, base: str, since: date, until: date, fix_window_days: int, refresh: bool = False) -> list[PR]:
+def fetch_prs(
+    owner: str, name: str, base: str, since: date, until: date, fix_window_days: int, refresh: bool = False,
+) -> tuple[list[PR], list[str]]:
     """Fetch every merged PR in [since, min(until + fix_window_days, today)],
     normalised to PR dataclasses, newest-fetch-range chunks refetched, older
-    ones cached forever on disk."""
+    ones cached forever on disk. Returns (prs, warnings) -- warnings are also
+    printed to stderr as they're found."""
     today = datetime.now(timezone.utc).date()
     fetch_until = min(until + timedelta(days=fix_window_days), today)
     all_nodes: list[dict] = []
+    warnings: list[str] = []
     for frm, to in _week_chunks(since, fetch_until):
-        all_nodes.extend(_load_or_fetch_chunk(owner, name, base, frm, to, refresh))
-    return [normalise_pr(n) for n in all_nodes]
+        all_nodes.extend(_load_or_fetch_chunk(owner, name, base, frm, to, refresh, warnings))
+    return [normalise_pr(n) for n in all_nodes], warnings

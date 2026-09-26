@@ -5,9 +5,42 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 from pr_outcomes import blame, fetch, metrics
+
+DEFINITIONS = {
+    "count": "Number of PRs in this group.",
+    "revert_rate": "Share of PRs later reverted by another PR (0-1).",
+    "revert_count": "Number of PRs later reverted by another PR.",
+    "followup_fix_rate": "Share of PRs later blamed for a follow-up fix, within the fix window (0-1); null without --repo-path.",
+    "followup_fix_count": "Number of PRs later blamed for a follow-up fix; null without --repo-path.",
+    "approval_share_substantive": "Share of approvals that were substantive: commented, then a push, then approved (0-1).",
+    "approval_share_commented": "Share of approvals where the reviewer commented but no push followed before approving (0-1).",
+    "approval_share_silent": "Share of approvals with no comment, not classified as rubber-stamp (0-1).",
+    "approval_share_rubber_stamp": "Share of approvals on a 200+ line diff that landed under 5 minutes after ready/push/request (0-1).",
+    "approval_count": "Number of human non-author approvals classified.",
+    "review_rounds_mean": "Mean number of comment-then-push-then-review rounds per PR.",
+    "review_rounds_ge1_share": "Share of PRs with at least one review round (0-1).",
+    "human_comments_mean": "Mean number of human comments per PR.",
+    "bot_comments_mean": "Mean number of bot comments per PR.",
+    "time_to_first_human_review_h_median": "Median hours from PR creation to first human review or comment.",
+    "time_to_first_human_review_h_p75": "75th percentile hours from PR creation to first human review or comment.",
+    "time_to_first_bot_review_h_median": "Median hours from PR creation to first bot review or comment.",
+    "time_to_first_bot_review_h_p75": "75th percentile hours from PR creation to first bot review or comment.",
+    "time_to_first_approval_h_median": "Median hours from PR creation to first human approval.",
+    "time_to_first_approval_h_p75": "75th percentile hours from PR creation to first human approval.",
+    "time_to_merge_h_median": "Median hours from PR creation to merge.",
+    "time_to_merge_h_p75": "75th percentile hours from PR creation to merge.",
+    "ready_to_merge_h_median": "Median hours from ready-for-review to merge.",
+    "ready_to_merge_h_p75": "75th percentile hours from ready-for-review to merge.",
+    "merged_within_1h": "Share of PRs merged within 1 hour of creation (0-1).",
+    "merged_within_24h": "Share of PRs merged within 24 hours of creation (0-1).",
+    "throughput_per_week": "PR count divided by the number of weeks in [--since, --until].",
+    "throughput_by_week": "PR count per ISO week (year-Www), merges in [--since, --until].",
+    "size_median": "Median PR size, additions + deletions, in lines.",
+    "size_p75": "75th percentile PR size, additions + deletions, in lines.",
+}
 
 OUTCOMES_ROWS = [
     ("revert_rate", "Revert rate"),
@@ -132,9 +165,19 @@ def parse_args(argv=None):
         help="Local clone for blame-based follow-up-fix attribution (local git only, never fetches). "
              "Without it, follow-up-fix metrics are null.",
     )
-    p.add_argument("--json", action="store_true")
-    p.add_argument("--refresh", action="store_true")
+    p.add_argument(
+        "--format", choices=["table", "json"], default=None,
+        help="Output format. Default: json when stdout is not a TTY, table when it is.",
+    )
+    p.add_argument("--json", action="store_true", help="Alias for --format json.")
+    p.add_argument("--prs", action="store_true", help="Include per-PR facts under the 'prs' key (json format only).")
+    p.add_argument("--refresh", action="store_true", help="Bypass the on-disk PR and blame caches.")
     return p.parse_args(argv)
+
+
+def _warn(msg: str, warnings: list[str]) -> None:
+    print(f"pr-outcomes: {msg}", file=sys.stderr)
+    warnings.append(msg)
 
 
 def main(argv=None) -> int:
@@ -142,6 +185,7 @@ def main(argv=None) -> int:
     today = date.today()
     since = args.since or (today - timedelta(days=90))
     until = args.until or today
+    fmt = "json" if args.json else (args.format or ("json" if not sys.stdout.isatty() else "table"))
 
     try:
         owner, name = args.repo.split("/", 1)
@@ -149,10 +193,20 @@ def main(argv=None) -> int:
         print("pr-outcomes: repo must be OWNER/NAME", file=sys.stderr)
         return 2
 
+    warnings: list[str] = []
+    complete_until = until - timedelta(days=args.fix_window_days)
+    if until > today - timedelta(days=args.fix_window_days):
+        _warn(
+            f"window truncated: PRs merged after {complete_until} have fewer than "
+            f"--fix-window-days ({args.fix_window_days}) to be reverted or fixed as of today ({today})",
+            warnings,
+        )
+
     try:
         base = args.base or fetch.get_default_branch(owner, name)
         print(f"pr-outcomes: base={base} since={since} until={until}", file=sys.stderr)
-        all_prs = fetch.fetch_prs(owner, name, base, since, until, args.fix_window_days, refresh=args.refresh)
+        all_prs, fetch_warnings = fetch.fetch_prs(owner, name, base, since, until, args.fix_window_days, refresh=args.refresh)
+        warnings.extend(fetch_warnings)
     except fetch.GhError as e:
         print(f"pr-outcomes: gh error: {e}", file=sys.stderr)
         return 1
@@ -167,7 +221,7 @@ def main(argv=None) -> int:
             print(f"pr-outcomes: blame error: {e}", file=sys.stderr)
             return 1
     else:
-        print("pr-outcomes: follow-up fixes need --repo-path", file=sys.stderr)
+        _warn("follow-up fixes need --repo-path", warnings)
 
     facts = metrics.compute_all_facts(all_prs, args.fix_window_days, followup_map)
     reportable = metrics.in_report_window(all_prs, since, until)
@@ -178,18 +232,27 @@ def main(argv=None) -> int:
         for name_, prs in groups_prs.items()
     }
 
-    if args.json:
+    if fmt == "json":
+        used_keys = {k for g in groups.values() for k in g}
         payload = {
             "repo": args.repo,
             "base": base,
             "since": since.isoformat(),
             "until": until.isoformat(),
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "fix_window_days": args.fix_window_days,
+            "complete_until": complete_until.isoformat(),
+            "warnings": warnings,
+            "definitions": {k: DEFINITIONS[k] for k in used_keys if k in DEFINITIONS},
             "groups": groups,
-            "prs": [build_pr_json(pr, facts[pr.number]) for pr in reportable],
         }
+        if args.prs:
+            payload["prs"] = [build_pr_json(pr, facts[pr.number]) for pr in reportable]
         print(json.dumps(payload, indent=2))
     else:
         print(render_table(groups))
+        if args.prs:
+            print(json.dumps([build_pr_json(pr, facts[pr.number]) for pr in reportable], indent=2))
 
     return 0
 
