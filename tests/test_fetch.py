@@ -195,18 +195,15 @@ class CubicScoreTest(unittest.TestCase):
         pr = fetch.normalise_pr(node)
         self.assertEqual((pr.cubic_first_score, pr.cubic_score), (2, 4))
 
-    def test_edit_with_null_edited_at_is_dated_at_submission(self):
+    def test_pending_review_without_submitted_at_is_skipped(self):
         node = {
             "number": 1, "title": "t", "url": "u", "author": {"login": "a"}, "baseRefName": "staging",
             "createdAt": "2026-09-01T00:00:00Z", "mergedAt": "2026-09-01T12:00:00Z",
             "reviews": {"nodes": [{
-                "author": {"login": "cubic-dev-ai", "__typename": "Bot"}, "state": "COMMENTED",
-                "submittedAt": "2026-09-01T01:00:00Z", "comments": {"totalCount": 0}, "body": "",
-                "userContentEdits": {"nodes": [
-                    {"editedAt": None, "diff": "<!-- cubic:review-summary:confidence-score:3/5 -->"},
-                ]},
+                "author": {"login": "b"}, "state": "PENDING", "submittedAt": None,
+                "comments": {"totalCount": 0}, "body": "", "userContentEdits": {"nodes": []},
             }]},
             "timelineItems": {"nodes": []},
         }
         pr = fetch.normalise_pr(node)
-        self.assertEqual((pr.cubic_first_score, pr.cubic_score), (3, 3))
+        self.assertEqual([e for e in pr.events if e.kind == "review"], [])
