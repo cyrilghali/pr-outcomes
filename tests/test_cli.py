@@ -3,10 +3,11 @@ import io
 import json
 import os
 import unittest
-from datetime import date
+from datetime import date, datetime, timezone
 from unittest import mock
 
 from pr_outcomes import cli
+from pr_outcomes.deploys import Deploy
 from pr_outcomes.fetch import PR, normalise_pr
 
 FIXTURES = os.path.join(os.path.dirname(__file__), "fixtures", "prs.json")
@@ -374,6 +375,59 @@ class PrsPerPrFactsTests(unittest.TestCase):
         prs_json = json.loads(out[out.index("["):])
         self.assertEqual(prs_json[0]["number"], 802)
         self.assertEqual(prs_json[0]["approval_classes"], {"grace": "silent"})
+
+
+class ProductionFlagValidationTests(unittest.TestCase):
+    def test_production_without_repo_path_exits_2(self):
+        with self.assertRaises(SystemExit) as ctx:
+            cli.parse_args(["o/r", "--production"])
+        self.assertEqual(ctx.exception.code, 2)
+
+    def test_production_with_repo_path_is_valid(self):
+        args = cli.parse_args(["o/r", "--production", "--repo-path", "/tmp/repo"])
+        self.assertTrue(args.production)
+
+
+class ProductionJsonAndTableTests(unittest.TestCase):
+    ARGV = ["o/r", "--since", "2026-04-01", "--until", "2026-04-30", "--repo-path", "/tmp/repo", "--production"]
+
+    def _run_with_production(
+        self, argv: list[str], prs: list[PR], built_deploys: list[Deploy] | None = None,
+    ) -> tuple[int, str]:
+        fake_stdout = io.StringIO()
+        fake_stdout.isatty = lambda: False
+        with mock.patch.object(cli.fetch, "get_default_branch", return_value="main"), \
+             mock.patch.object(cli.fetch, "fetch_prs", return_value=(prs, [])), \
+             mock.patch.object(cli.deploys, "build_deploys", return_value=(built_deploys or [], [])), \
+             mock.patch.object(cli.blame, "build_sha_to_pr", return_value={}), \
+             mock.patch.object(cli.sys, "stdout", fake_stdout):
+            code = cli.main(argv)
+        return code, fake_stdout.getvalue()
+
+    def test_json_definitions_cover_every_production_key(self):
+        pr_ = normalise_pr(_RAW["merged_0_5h"])
+        deploy = Deploy(
+            sha="s1", release_head="h1",
+            deployed_at=datetime(2026, 4, 5, tzinfo=timezone.utc),
+            prs=frozenset({pr_.number}),
+        )
+        code, out = self._run_with_production(self.ARGV + ["--format", "json"], [pr_], built_deploys=[deploy])
+        self.assertEqual(code, 0)
+        payload = json.loads(out)
+        for group in payload["groups"].values():
+            for key in group:
+                self.assertIn(key, payload["definitions"], f"{key!r} has no definition")
+
+    def test_table_shows_production_section(self):
+        pr_ = normalise_pr(_RAW["merged_0_5h"])
+        deploy = Deploy(
+            sha="s1", release_head="h1",
+            deployed_at=datetime(2026, 4, 5, tzinfo=timezone.utc),
+            prs=frozenset({pr_.number}),
+        )
+        code, out = self._run_with_production(self.ARGV + ["--format", "table"], [pr_], built_deploys=[deploy])
+        self.assertEqual(code, 0)
+        self.assertIn("-- Production --", out)
 
 
 class GhErrorHintTests(unittest.TestCase):

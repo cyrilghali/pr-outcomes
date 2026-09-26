@@ -1,8 +1,9 @@
 import json
 import os
 import unittest
-from datetime import date
+from datetime import date, timedelta
 
+from pr_outcomes.deploys import Deploy
 from pr_outcomes.fetch import PR, normalise_pr
 from pr_outcomes import metrics
 
@@ -230,6 +231,58 @@ class TimeToMergeFromCreatedTests(unittest.TestCase):
         assert facts.ready_to_merge_h is not None
         self.assertAlmostEqual(facts.time_to_merge_h, 3.0)
         self.assertAlmostEqual(facts.ready_to_merge_h, 1.0)
+
+
+class ProductionMetricsTests(unittest.TestCase):
+    def test_production_and_sentry_keys_absent_by_default(self):
+        prs = [pr("merged_0_5h")]
+        facts = metrics.compute_all_facts(prs, fix_window_days=7)
+        out = metrics.aggregate_group(prs, facts, date(2026, 4, 1), date(2026, 4, 30))
+        for key in (
+            "lead_time_to_prod_h_median", "lead_time_to_prod_h_p75", "not_deployed_count",
+            "deploy_count", "deploys_per_week", "change_failure_rate", "failed_deploy_count",
+        ):
+            self.assertNotIn(key, out)
+
+    def test_lead_time_deploy_count_and_change_failure_rate(self):
+        p1, p2, p3 = pr("merged_0_5h"), pr("merged_5h"), pr("merged_30h")
+        assert p1.merged is not None
+        assert p3.merged is not None
+        # deploy2 deploys after both p2 and p3 merged, so both get a
+        # non-negative lead time.
+        deploy1 = Deploy(sha="s1", release_head="h1", deployed_at=p1.merged + timedelta(hours=2), prs=frozenset({320}))
+        deploy2 = Deploy(
+            sha="s2", release_head="h2", deployed_at=p3.merged + timedelta(hours=4), prs=frozenset({321, 322}),
+        )
+        deploy_by_pr = {320: deploy1, 321: deploy2, 322: deploy2}
+        facts = metrics.compute_all_facts([p1, p2, p3], fix_window_days=7, deploy_by_pr=deploy_by_pr)
+        facts[321].reverted = True  # one PR in deploy2 reverted -> deploy2 counts as a failed deploy
+
+        # Lead times: p1 (deploy1, +2h) = 2h; p2 (deploy2, merged 05:00 on
+        # 04-01, deploy2 deployed 10:00 on 04-02) = 29h; p3 (deploy2, +4h) =
+        # 4h. Sorted [2, 4, 29]: median 4, p75 interpolates 4 + (29-4)*0.5 = 16.5.
+        # Hard-coded (not derived from the facts under test) so a bug that
+        # flips a lead-time's sign or drops a PR still fails this test.
+        out = metrics.aggregate_group(
+            [p1, p2, p3], facts, date(2026, 4, 1), date(2026, 4, 30), production=True,
+        )
+
+        self.assertEqual(out["deploy_count"], 2)
+        self.assertEqual(out["not_deployed_count"], 0)
+        self.assertEqual(out["lead_time_to_prod_h_median"], 4.0)
+        self.assertEqual(out["lead_time_to_prod_h_p75"], 16.5)
+        self.assertEqual(out["failed_deploy_count"], 1)
+        self.assertEqual(out["change_failure_rate"], 0.5)
+
+    def test_not_deployed_count_for_prs_with_no_deploy(self):
+        p1, p2 = pr("merged_0_5h"), pr("merged_5h")
+        facts = metrics.compute_all_facts([p1, p2], fix_window_days=7, deploy_by_pr={})
+        out = metrics.aggregate_group(
+            [p1, p2], facts, date(2026, 4, 1), date(2026, 4, 30), production=True,
+        )
+        self.assertEqual(out["not_deployed_count"], 2)
+        self.assertIsNone(out["lead_time_to_prod_h_median"])
+        self.assertIsNone(out["change_failure_rate"])
 
 
 class TeamGroupTests(unittest.TestCase):

@@ -9,7 +9,7 @@ import sys
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
-from pr_outcomes import blame, fetch, metrics
+from pr_outcomes import blame, deploys, fetch, metrics
 
 DEFINITIONS = {
     "count": "Number of PRs in this group.",
@@ -47,6 +47,13 @@ DEFINITIONS = {
     "throughput_by_week": "PR count per ISO week (year-Www), merges in [--since, --until].",
     "size_median": "Median PR size, additions + deletions, in lines.",
     "size_p75": "75th percentile PR size, additions + deletions, in lines.",
+    "lead_time_to_prod_h_median": "Median hours from PR merge to production deploy; null without --production.",
+    "lead_time_to_prod_h_p75": "75th percentile hours from PR merge to production deploy; null without --production.",
+    "not_deployed_count": "Number of PRs not yet in a known production deploy.",
+    "deploy_count": "Number of distinct production deploys carrying this group's PRs.",
+    "deploys_per_week": "deploy_count divided by the number of weeks in [--since, --until].",
+    "change_failure_rate": "Share of this group's deploys where a shipped PR was later reverted or blamed for a follow-up fix (0-1).",
+    "failed_deploy_count": "Number of this group's deploys where a shipped PR was later reverted or blamed for a follow-up fix.",
 }
 
 OUTCOMES_ROWS = [
@@ -82,6 +89,15 @@ SPEED_ROWS = [
     ("size_median", "Size, lines (median)"),
     ("size_p75", "Size, lines (p75)"),
 ]
+PRODUCTION_ROWS = [
+    ("lead_time_to_prod_h_median", "Lead time to production, h (median)"),
+    ("lead_time_to_prod_h_p75", "Lead time to production, h (p75)"),
+    ("not_deployed_count", "Not yet deployed"),
+    ("deploy_count", "Deploy count"),
+    ("deploys_per_week", "Deploys / week"),
+    ("change_failure_rate", "Change failure rate"),
+    ("failed_deploy_count", "Failed deploy count"),
+]
 
 
 def _fmt(value: Any) -> str:
@@ -99,14 +115,16 @@ def _fmt_share(value: float | None) -> str:
 SHARE_KEYS = {
     "revert_rate", "followup_fix_rate", "approval_share_changed_by_review",
     "approval_share_commented", "approval_share_silent", "approval_share_rubber_stamp",
-    "review_rounds_ge1_share", "cubic_scored_share", "cubic_5_share", "cubic_first_5_share", "merged_within_1h", "merged_within_24h",
+    "review_rounds_ge1_share", "cubic_scored_share", "cubic_5_share", "cubic_first_5_share",
+    "merged_within_1h", "merged_within_24h", "change_failure_rate",
 }
 
 
 def render_table(groups: dict[str, dict[str, Any]]) -> str:
     names = list(groups.keys())
+    used_keys = {k for g in groups.values() for k in g}
     col_width = max([len(n) for n in names] + [12]) + 2
-    label_width = max(len(label) for _, label in OUTCOMES_ROWS + REVIEW_DEPTH_ROWS + SPEED_ROWS) + 2
+    label_width = max(len(label) for _, label in OUTCOMES_ROWS + REVIEW_DEPTH_ROWS + SPEED_ROWS + PRODUCTION_ROWS) + 2
 
     lines = []
 
@@ -128,14 +146,17 @@ def render_table(groups: dict[str, dict[str, Any]]) -> str:
         lines.append("")
 
     section("Outcomes", OUTCOMES_ROWS)
+    production_rows = [(k, label) for k, label in PRODUCTION_ROWS if k in used_keys]
+    if production_rows:
+        section("Production", production_rows)
     section("Review depth", REVIEW_DEPTH_ROWS)
     section("Speed", SPEED_ROWS)
 
     return "\n".join(lines).rstrip() + "\n"
 
 
-def build_pr_json(pr: fetch.PR, fact: metrics.PRFacts) -> dict[str, Any]:
-    return {
+def build_pr_json(pr: fetch.PR, fact: metrics.PRFacts, production: bool = False) -> dict[str, Any]:
+    data = {
         "number": pr.number,
         "title": pr.title,
         "url": pr.url,
@@ -164,6 +185,11 @@ def build_pr_json(pr: fetch.PR, fact: metrics.PRFacts) -> dict[str, Any]:
         "followup_fix": fact.followup_fix,
         "followup_fix_by": fact.followup_fix_by,
     }
+    if production:
+        data["deploy_sha"] = fact.deploy_sha
+        data["deployed_at"] = fact.deployed_at.isoformat() if fact.deployed_at else None
+        data["lead_time_to_prod_h"] = fact.lead_time_to_prod_h
+    return data
 
 
 def parse_repo(s: str) -> str:
@@ -215,6 +241,7 @@ Examples:
   pr-outcomes tryriot/parrot --team sonar --group-by week
   pr-outcomes tryriot/parrot --prs | jq '.prs[] | select(.number == 1234)'
   pr-outcomes tryriot/parrot --since 2026-08-01 --until 2026-09-18 --format table
+  pr-outcomes tryriot/parrot --repo-path ~/dev/riot/parrot --production --team sonar --group-by month
 
 Exit codes: 0 ok, 1 GitHub/git error, 2 usage error.
 
@@ -274,6 +301,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Include per-PR facts (json: under the 'prs' key; table: a JSON block printed after the table). "
              "Default: off.",
     )
+    p.add_argument(
+        "--production", action="store_true",
+        help="Add lead time to production, deploy frequency, and change failure rate, from "
+             "origin/production in --repo-path and the deploy-production.yml/cd-production.yml "
+             "GitHub Actions runs (both queried; the workflow was renamed 2026-08-28). "
+             "Requires --repo-path. Default: off.",
+    )
     p.add_argument("--refresh", action="store_true", help="Bypass the on-disk PR, blame, and team caches. Default: off.")
     p.add_argument(
         "--verbose", action="store_true",
@@ -285,6 +319,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         resolve_format(args.format, args.json, is_tty=False)  # validate only; actual value depends on runtime stdout
     except ValueError as e:
         p.error(str(e))
+    if args.production and not args.repo_path:
+        p.error("--production requires --repo-path")
     return args
 
 
@@ -394,7 +430,24 @@ def main(argv: list[str] | None = None) -> int:
     else:
         _warn("follow-up fixes need --repo-path", warnings)
 
-    facts = metrics.compute_all_facts(all_prs, args.fix_window_days, followup_map)
+    deploy_by_pr: dict[int, deploys.Deploy] | None = None
+    if args.production:
+        try:
+            built_deploys, deploy_warnings = deploys.build_deploys(args.repo_path, owner, name, base, since, until)
+        except fetch.GhError as e:
+            print(f"pr-outcomes: gh error: {e}", file=sys.stderr)
+            print(f"pr-outcomes: hint: {gh_error_hint(str(e))}", file=sys.stderr)
+            return 1
+        except blame.BlameError as e:
+            print(f"pr-outcomes: blame error: {e}", file=sys.stderr)
+            print("pr-outcomes: hint: --repo-path needs a local clone with 'origin/<base>' fetched", file=sys.stderr)
+            return 1
+        for w in deploy_warnings:
+            print(f"pr-outcomes: {w}", file=sys.stderr)
+        warnings.extend(deploy_warnings)
+        deploy_by_pr = {pr_number: d for d in built_deploys for pr_number in d.prs}
+
+    facts = metrics.compute_all_facts(all_prs, args.fix_window_days, followup_map, deploy_by_pr)
     reportable = metrics.in_report_window(all_prs, since, until)
 
     if args.team:
@@ -418,7 +471,9 @@ def main(argv: list[str] | None = None) -> int:
                 )
 
     groups = {
-        name_: metrics.aggregate_group(prs, facts, *metrics.group_window(name_, args.group_by, since, until))
+        name_: metrics.aggregate_group(
+            prs, facts, *metrics.group_window(name_, args.group_by, since, until), production=args.production,
+        )
         for name_, prs in groups_prs.items()
     }
 
@@ -438,12 +493,17 @@ def main(argv: list[str] | None = None) -> int:
             "groups": groups,
         }
         if args.prs:
-            payload["prs"] = [build_pr_json(pr, facts[pr.number]) for pr in reportable]
+            payload["prs"] = [
+                build_pr_json(pr, facts[pr.number], production=args.production) for pr in reportable
+            ]
         print(json.dumps(payload, indent=2))
     else:
         print(render_table(groups))
         if args.prs:
-            print(json.dumps([build_pr_json(pr, facts[pr.number]) for pr in reportable], indent=2))
+            print(json.dumps(
+                [build_pr_json(pr, facts[pr.number], production=args.production) for pr in reportable],
+                indent=2,
+            ))
 
     return 0
 

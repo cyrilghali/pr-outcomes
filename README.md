@@ -49,12 +49,13 @@ pr-outcomes tryriot/parrot --team sonar --group-by author
 pr-outcomes tryriot/parrot --group-by size
 pr-outcomes tryriot/parrot --team sonar --group-by week
 pr-outcomes tryriot/parrot --prs | jq '.prs[] | select(.number == 1234)'
+pr-outcomes tryriot/parrot --repo-path ~/dev/riot/parrot --production --team sonar --group-by month
 ```
 
 ```
 pr-outcomes OWNER/REPO [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--base BRANCH]
             [--group-by reviewed|label|author|approver|depth|team|size|week|month] [--teams SLUG,...] [--team SLUG]
-            [--fix-window-days 7] [--repo-path PATH]
+            [--fix-window-days 7] [--repo-path PATH] [--production]
             [--format table|json] [--json] [--prs] [--refresh] [--verbose]
 ```
 
@@ -70,6 +71,7 @@ Run `pr-outcomes --help` for every flag's default and an `Examples:` block.
 | `--team` | none | Keep only PRs authored by a member of this single GitHub org team slug, e.g. `sonar`. Combines with any `--group-by` (`--team sonar --group-by author`). Reuses the same cached membership as `--group-by team`. An unknown slug exits 2 and lists the valid ones. |
 | `--fix-window-days` | 7 | How many days past `--until` to look for reverts and follow-up fixes. PRs merged in the last `--fix-window-days` days before `--until` have a truncated real window, since the fetch range is capped at today: for a baseline measurement, pick an `--until` at least that far in the past. |
 | `--repo-path` | none | Local clone to blame-attribute follow-up fixes against (see below). Only local git commands are run; the clone is never fetched or written to. Without it, follow-up-fix metrics are null (`-` in the table, `null` in JSON). |
+| `--production` | off | Add lead time to production, deploy frequency, and change failure rate from `origin/production` in `--repo-path` and the `deploy-production.yml`/`cd-production.yml` GitHub Actions runs (the workflow was renamed 2026-08-28; both are queried, since GitHub keeps older runs under the old name). Requires `--repo-path`. |
 | `--format` | `json` when piped, `table` when a TTY | `--json` is a shorthand for `--format json`. |
 | `--prs` | off | Include per-PR facts (JSON: under `"prs"`; table: a JSON block printed after the table). |
 | `--refresh` | off | Bypass the on-disk PR, blame, and team caches. |
@@ -149,6 +151,26 @@ are no old lines to blame. A fix whose title doesn't start with `fix`,
 `hotfix`, or `bugfix` is missed entirely. Only local git history is read,
 never GitHub state, so this needs a local clone passed through
 `--repo-path`.
+
+### Production outcomes
+
+With `--production`:
+
+| Metric | Definition |
+|---|---|
+| Lead time to production | Hours from PR merge to the production deploy that shipped it (median, p75). Null for a PR not yet in a known deploy. |
+| Deploy frequency | `deploy_count` (distinct production deploys carrying this group's PRs) and `deploys_per_week`. |
+| Change failure rate | Share of this group's deploys where a shipped PR was later reverted or blamed for a follow-up fix. |
+
+Limits:
+
+- Deploy frequency and change failure rate count deploys carrying that
+  group's PRs, not the group's own deploys in isolation: a deploy shared
+  across groups counts for each.
+- The clone in `--repo-path` is never fetched, so a stale local
+  `origin/production` makes recently-deployed PRs look not-deployed.
+- Change failure rate inherits the revert and follow-up-fix detection
+  limits above, and counts code remediation, not customer-facing incidents.
 
 ### Review depth
 
@@ -249,3 +271,5 @@ Static types are checked with `pyright` (via `uvx`) as part of `tests/test_types
 `fetch.py` handles GitHub I/O and JSON normalisation. `metrics.py` is pure
 functions with no I/O, tested against hand-built fixtures in
 `tests/fixtures/`. `cli.py` wires the two together and renders the output.
+`deploys.py` links `origin/production` merges to their GitHub Actions deploy
+runs and the staging PRs each one shipped.

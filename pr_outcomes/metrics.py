@@ -11,9 +11,12 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from collections.abc import Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pr_outcomes.fetch import PR, Actor, Event
+
+if TYPE_CHECKING:
+    from pr_outcomes.deploys import Deploy
 
 # Approval-class thresholds, named so the "why" travels with the number.
 RUBBER_STAMP_MIN_SIZE = 200  # below this a fast approval could still be a real read of a tiny diff
@@ -58,6 +61,9 @@ class PRFacts:
     author: str = ""
     cubic_score: int | None = None
     cubic_first_score: int | None = None
+    deploy_sha: str | None = None
+    deployed_at: datetime | None = None
+    lead_time_to_prod_h: float | None = None
 
 
 def _hours(a: datetime | None, b: datetime | None) -> float | None:
@@ -173,12 +179,17 @@ def compute_reverts(prs: list[PR]) -> dict[int, list[int]]:
     return dict(reverted_by)
 
 
-def compute_all_facts(prs: list[PR], fix_window_days: int, followup_by_fix: dict[int, set[int]] | None = None) -> dict[int, PRFacts]:
+def compute_all_facts(
+    prs: list[PR], fix_window_days: int, followup_by_fix: dict[int, set[int]] | None = None,
+    deploy_by_pr: dict[int, Deploy] | None = None,
+) -> dict[int, PRFacts]:
     """Per-PR facts for the whole fetched set (needed because reverts and
     follow-up fixes can land after --until). `followup_by_fix` is the
     fix-PR -> introducing-PRs mapping from `blame.compute_followup_fixes`;
     pass None when --repo-path wasn't given, which leaves followup_fix
-    unset (null) on every PR rather than guessing."""
+    unset (null) on every PR rather than guessing. `deploy_by_pr` maps a PR
+    number to the `deploys.Deploy` that shipped it (pass None without
+    --production)."""
     reverted_by = compute_reverts(prs)
     revert_numbers = {n for pr in prs if is_revert_title(pr.title) for n in [pr.number]}
 
@@ -191,6 +202,7 @@ def compute_all_facts(prs: list[PR], fix_window_days: int, followup_by_fix: dict
     facts: dict[int, PRFacts] = {}
     for pr in prs:
         followups = followups_by_introducing.get(pr.number, [])
+        deploy = deploy_by_pr.get(pr.number) if deploy_by_pr is not None else None
         facts[pr.number] = PRFacts(
             number=pr.number,
             time_to_first_human_review_h=_hours(pr.created, _first_event_time(pr, lambda e: e.kind in ("review", "comment") and _is_human_reviewer(pr, e.actor))),
@@ -215,6 +227,9 @@ def compute_all_facts(prs: list[PR], fix_window_days: int, followup_by_fix: dict
             author=pr.author.login,
             cubic_score=pr.cubic_score,
             cubic_first_score=pr.cubic_first_score,
+            deploy_sha=deploy.sha if deploy else None,
+            deployed_at=deploy.deployed_at if deploy else None,
+            lead_time_to_prod_h=_hours(pr.merged, deploy.deployed_at) if deploy else None,
         )
     return facts
 
@@ -402,7 +417,9 @@ def _share(numerator: int, denominator: int) -> float | None:
     return round(numerator / denominator, 3)
 
 
-def aggregate_group(prs: list[PR], facts: dict[int, PRFacts], since: date, until: date) -> dict[str, Any]:
+def aggregate_group(
+    prs: list[PR], facts: dict[int, PRFacts], since: date, until: date, production: bool = False,
+) -> dict[str, Any]:
     group_facts = [facts[pr.number] for pr in prs]
     non_revert = [f for f in group_facts if not f.is_revert]
     n_non_revert = len(non_revert)
@@ -469,5 +486,23 @@ def aggregate_group(prs: list[PR], facts: dict[int, PRFacts], since: date, until
     size_med, size_p75 = _median_p75([f.size for f in group_facts])
     out["size_median"] = size_med
     out["size_p75"] = size_p75
+
+    if production:
+        deployed = [f for f in group_facts if f.deploy_sha is not None]
+        lead_med, lead_p75 = _median_p75([f.lead_time_to_prod_h for f in deployed])
+        out["lead_time_to_prod_h_median"] = lead_med
+        out["lead_time_to_prod_h_p75"] = lead_p75
+        out["not_deployed_count"] = len(group_facts) - len(deployed)
+
+        distinct_deploys = {f.deploy_sha for f in deployed}
+        out["deploy_count"] = len(distinct_deploys)
+        out["deploys_per_week"] = round(len(distinct_deploys) / weeks, 2)
+
+        failed = sum(
+            1 for sha in distinct_deploys
+            if any(f.reverted or f.followup_fix for f in deployed if f.deploy_sha == sha)
+        )
+        out["change_failure_rate"] = _share(failed, len(distinct_deploys))
+        out["failed_deploy_count"] = failed
 
     return out
