@@ -191,7 +191,7 @@ separates anything; `depth` is the split that does.
 |---|---|
 | Review and approval timings | Time to first human review, time to first bot review, time to first approval, time to merge (from creation), and ready to merge (from the first "ready for review" event, or creation if the PR was never drafted). Each is reported as a median and a p75, in hours. |
 | `merged_within_1h`, `merged_within_24h` | The share of PRs merged within one hour, or 24 hours, of creation. |
-| `throughput_per_week` | PR count divided by the number of weeks in range. The JSON output also breaks this down by ISO week. |
+| `throughput_per_week` | PR count divided by the number of weeks in range; with `--group-by week` or `month`, the weeks of that period inside the range. The JSON output also breaks this down by ISO week. |
 | `size` | Additions plus deletions, reported as a median and a p75. |
 
 `--group-by size` buckets PRs the same way (`xs` <100, `s` 100-299, `m`

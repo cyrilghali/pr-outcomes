@@ -358,3 +358,15 @@ class DepthGroupTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class GroupWindowTests(unittest.TestCase):
+    def test_period_group_is_clipped_to_the_report_window(self):
+        since, until = date(2026, 6, 10), date(2026, 9, 18)
+        self.assertEqual(metrics.group_window("2026-06", "month", since, until), (date(2026, 6, 10), date(2026, 6, 30)))
+        self.assertEqual(metrics.group_window("2026-07", "month", since, until), (date(2026, 7, 1), date(2026, 7, 31)))
+        self.assertEqual(metrics.group_window("2026-09", "month", since, until), (date(2026, 9, 1), date(2026, 9, 18)))
+
+    def test_non_period_group_uses_the_whole_window(self):
+        since, until = date(2026, 6, 10), date(2026, 9, 18)
+        self.assertEqual(metrics.group_window("sonar", "team", since, until), (since, until))

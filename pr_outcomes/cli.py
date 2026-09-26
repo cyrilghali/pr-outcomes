@@ -37,7 +37,7 @@ DEFINITIONS = {
     "ready_to_merge_h_p75": "75th percentile hours from ready-for-review to merge.",
     "merged_within_1h": "Share of PRs merged within 1 hour of creation (0-1).",
     "merged_within_24h": "Share of PRs merged within 24 hours of creation (0-1).",
-    "throughput_per_week": "PR count divided by the number of weeks in [--since, --until].",
+    "throughput_per_week": "PR count divided by the number of weeks in [--since, --until], or in the period clipped to that window for --group-by week|month.",
     "throughput_by_week": "PR count per ISO week (year-Www), merges in [--since, --until].",
     "size_median": "Median PR size, additions + deletions, in lines.",
     "size_p75": "75th percentile PR size, additions + deletions, in lines.",
@@ -394,7 +394,7 @@ def main(argv=None) -> int:
                 )
 
     groups = {
-        name_: metrics.aggregate_group(prs, facts, since, until)
+        name_: metrics.aggregate_group(prs, facts, *metrics.group_window(name_, args.group_by, since, until))
         for name_, prs in groups_prs.items()
     }
 

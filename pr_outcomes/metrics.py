@@ -238,6 +238,16 @@ def period_bounds(label: str, group_by: str) -> tuple[date, date]:
     return date(year, month, 1), date(year, month, monthrange(year, month)[1])
 
 
+def group_window(label: str, group_by: str | None, since: date, until: date) -> tuple[date, date]:
+    """The date range a group's throughput is measured over: a period group
+    covers its own period clipped to the report window, other groups the
+    whole window."""
+    if group_by not in ("week", "month"):
+        return since, until
+    start, end = period_bounds(label, group_by)
+    return max(start, since), min(end, until)
+
+
 SIZE_BUCKETS = ("xs", "s", "m", "l")
 
 
