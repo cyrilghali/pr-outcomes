@@ -960,5 +960,567 @@
     "timelineItems": {
       "nodes": []
     }
+  },
+  "rounds_three_mixed": {
+    "number": 220,
+    "title": "Three review events, mixed pushes",
+    "body": "",
+    "url": "https://github.com/o/r/pull/220",
+    "createdAt": "2026-01-20T00:00:00Z",
+    "mergedAt": "2026-01-20T06:00:00Z",
+    "baseRefName": "main",
+    "additions": 20,
+    "deletions": 5,
+    "changedFiles": 2,
+    "author": {
+      "login": "alice",
+      "__typename": "User"
+    },
+    "labels": {
+      "nodes": []
+    },
+    "files": {
+      "nodes": []
+    },
+    "comments": {
+      "nodes": [
+        {
+          "author": {
+            "login": "bob",
+            "__typename": "User"
+          },
+          "createdAt": "2026-01-20T01:00:00Z"
+        },
+        {
+          "author": {
+            "login": "bob",
+            "__typename": "User"
+          },
+          "createdAt": "2026-01-20T03:00:00Z"
+        },
+        {
+          "author": {
+            "login": "bob",
+            "__typename": "User"
+          },
+          "createdAt": "2026-01-20T05:00:00Z"
+        }
+      ]
+    },
+    "reviews": {
+      "nodes": []
+    },
+    "reviewThreads": {
+      "nodes": []
+    },
+    "timelineItems": {
+      "nodes": [
+        {
+          "__typename": "PullRequestCommit",
+          "commit": {
+            "committedDate": "2026-01-20T00:30:00Z"
+          }
+        },
+        {
+          "__typename": "PullRequestCommit",
+          "commit": {
+            "committedDate": "2026-01-20T02:00:00Z"
+          }
+        }
+      ]
+    }
+  },
+  "rubber_stamp_4min": {
+    "number": 230,
+    "title": "rubber stamp 4 min",
+    "body": "",
+    "url": "https://github.com/o/r/pull/230",
+    "createdAt": "2026-02-01T00:00:00Z",
+    "mergedAt": "2026-02-01T01:00:00Z",
+    "baseRefName": "main",
+    "additions": 150,
+    "deletions": 100,
+    "changedFiles": 5,
+    "author": {
+      "login": "alice",
+      "__typename": "User"
+    },
+    "labels": {
+      "nodes": []
+    },
+    "files": {
+      "nodes": []
+    },
+    "comments": {
+      "nodes": []
+    },
+    "reviewThreads": {
+      "nodes": []
+    },
+    "reviews": {
+      "nodes": [
+        {
+          "author": {
+            "login": "ivan",
+            "__typename": "User"
+          },
+          "state": "APPROVED",
+          "submittedAt": "2026-02-01T00:04:00Z",
+          "body": "",
+          "comments": {
+            "totalCount": 0
+          }
+        }
+      ]
+    },
+    "timelineItems": {
+      "nodes": [
+        {
+          "__typename": "PullRequestCommit",
+          "commit": {
+            "committedDate": "2026-02-01T00:00:00Z"
+          }
+        }
+      ]
+    }
+  },
+  "rubber_stamp_6min": {
+    "number": 231,
+    "title": "rubber stamp timing silent",
+    "body": "",
+    "url": "https://github.com/o/r/pull/231",
+    "createdAt": "2026-02-02T00:00:00Z",
+    "mergedAt": "2026-02-02T01:00:00Z",
+    "baseRefName": "main",
+    "additions": 150,
+    "deletions": 100,
+    "changedFiles": 5,
+    "author": {
+      "login": "alice",
+      "__typename": "User"
+    },
+    "labels": {
+      "nodes": []
+    },
+    "files": {
+      "nodes": []
+    },
+    "comments": {
+      "nodes": []
+    },
+    "reviewThreads": {
+      "nodes": []
+    },
+    "reviews": {
+      "nodes": [
+        {
+          "author": {
+            "login": "ivan",
+            "__typename": "User"
+          },
+          "state": "APPROVED",
+          "submittedAt": "2026-02-02T00:06:00Z",
+          "body": "",
+          "comments": {
+            "totalCount": 0
+          }
+        }
+      ]
+    },
+    "timelineItems": {
+      "nodes": [
+        {
+          "__typename": "PullRequestCommit",
+          "commit": {
+            "committedDate": "2026-02-02T00:00:00Z"
+          }
+        }
+      ]
+    }
+  },
+  "rubber_stamp_late_request": {
+    "number": 232,
+    "title": "late review request moves reference",
+    "body": "",
+    "url": "https://github.com/o/r/pull/232",
+    "createdAt": "2026-02-03T00:00:00Z",
+    "mergedAt": "2026-02-03T02:00:00Z",
+    "baseRefName": "main",
+    "additions": 150,
+    "deletions": 100,
+    "changedFiles": 5,
+    "author": {
+      "login": "alice",
+      "__typename": "User"
+    },
+    "labels": {
+      "nodes": []
+    },
+    "files": {
+      "nodes": []
+    },
+    "comments": {
+      "nodes": []
+    },
+    "reviewThreads": {
+      "nodes": []
+    },
+    "reviews": {
+      "nodes": [
+        {
+          "author": {
+            "login": "ivan",
+            "__typename": "User"
+          },
+          "state": "APPROVED",
+          "submittedAt": "2026-02-03T01:04:00Z",
+          "body": "",
+          "comments": {
+            "totalCount": 0
+          }
+        }
+      ]
+    },
+    "timelineItems": {
+      "nodes": [
+        {
+          "__typename": "PullRequestCommit",
+          "commit": {
+            "committedDate": "2026-02-03T00:00:00Z"
+          }
+        },
+        {
+          "__typename": "ReviewRequestedEvent",
+          "createdAt": "2026-02-03T01:00:00Z",
+          "requestedReviewer": {
+            "login": "ivan"
+          }
+        }
+      ]
+    }
+  },
+  "bot_approval": {
+    "number": 801,
+    "title": "Bot approves, never counts as human review",
+    "body": "",
+    "url": "https://github.com/o/r/pull/801",
+    "createdAt": "2026-01-11T00:00:00Z",
+    "mergedAt": "2026-01-11T01:00:00Z",
+    "baseRefName": "main",
+    "additions": 5,
+    "deletions": 5,
+    "changedFiles": 1,
+    "author": {
+      "login": "alice",
+      "__typename": "User"
+    },
+    "labels": {
+      "nodes": []
+    },
+    "files": {
+      "nodes": []
+    },
+    "comments": {
+      "nodes": []
+    },
+    "reviews": {
+      "nodes": [
+        {
+          "author": {
+            "login": "cubic-dev-ai",
+            "__typename": "Bot"
+          },
+          "state": "APPROVED",
+          "submittedAt": "2026-01-11T00:05:00Z",
+          "body": "LGTM",
+          "comments": {
+            "totalCount": 0
+          }
+        }
+      ]
+    },
+    "reviewThreads": {
+      "nodes": []
+    },
+    "timelineItems": {
+      "nodes": []
+    }
+  },
+  "draft_then_ready": {
+    "number": 240,
+    "title": "Opened as draft, marked ready later",
+    "body": "",
+    "url": "https://github.com/o/r/pull/240",
+    "createdAt": "2026-03-01T00:00:00Z",
+    "mergedAt": "2026-03-01T03:00:00Z",
+    "baseRefName": "main",
+    "additions": 10,
+    "deletions": 5,
+    "changedFiles": 1,
+    "author": {
+      "login": "alice",
+      "__typename": "User"
+    },
+    "labels": {
+      "nodes": []
+    },
+    "files": {
+      "nodes": []
+    },
+    "comments": {
+      "nodes": []
+    },
+    "reviews": {
+      "nodes": []
+    },
+    "reviewThreads": {
+      "nodes": []
+    },
+    "timelineItems": {
+      "nodes": [
+        {
+          "__typename": "ReadyForReviewEvent",
+          "createdAt": "2026-03-01T02:00:00Z"
+        }
+      ]
+    }
+  },
+  "revert_quoted_original": {
+    "number": 310,
+    "title": "Add feature Z",
+    "body": "",
+    "url": "https://github.com/o/r/pull/310",
+    "createdAt": "2026-01-09T00:00:00Z",
+    "mergedAt": "2026-01-09T01:00:00Z",
+    "baseRefName": "main",
+    "additions": 40,
+    "deletions": 2,
+    "changedFiles": 2,
+    "author": {
+      "login": "alice",
+      "__typename": "User"
+    },
+    "labels": {
+      "nodes": []
+    },
+    "files": {
+      "nodes": []
+    },
+    "comments": {
+      "nodes": []
+    },
+    "reviews": {
+      "nodes": []
+    },
+    "reviewThreads": {
+      "nodes": []
+    },
+    "timelineItems": {
+      "nodes": []
+    }
+  },
+  "revert_quoted_pr": {
+    "number": 311,
+    "title": "Revert \"Add feature Z\"",
+    "body": "",
+    "url": "https://github.com/o/r/pull/311",
+    "createdAt": "2026-01-09T02:00:00Z",
+    "mergedAt": "2026-01-09T03:00:00Z",
+    "baseRefName": "main",
+    "additions": 2,
+    "deletions": 40,
+    "changedFiles": 2,
+    "author": {
+      "login": "bob",
+      "__typename": "User"
+    },
+    "labels": {
+      "nodes": []
+    },
+    "files": {
+      "nodes": []
+    },
+    "comments": {
+      "nodes": []
+    },
+    "reviews": {
+      "nodes": []
+    },
+    "reviewThreads": {
+      "nodes": []
+    },
+    "timelineItems": {
+      "nodes": []
+    }
+  },
+  "merged_0_5h": {
+    "number": 320,
+    "title": "merge speed 0.5h",
+    "body": "",
+    "url": "https://github.com/o/r/pull/320",
+    "createdAt": "2026-04-01T00:00:00Z",
+    "mergedAt": "2026-04-01T00:30:00Z",
+    "baseRefName": "main",
+    "additions": 5,
+    "deletions": 5,
+    "changedFiles": 1,
+    "author": {
+      "login": "alice",
+      "__typename": "User"
+    },
+    "labels": {
+      "nodes": []
+    },
+    "files": {
+      "nodes": []
+    },
+    "comments": {
+      "nodes": []
+    },
+    "reviews": {
+      "nodes": []
+    },
+    "reviewThreads": {
+      "nodes": []
+    },
+    "timelineItems": {
+      "nodes": []
+    }
+  },
+  "merged_5h": {
+    "number": 321,
+    "title": "merge speed 5h",
+    "body": "",
+    "url": "https://github.com/o/r/pull/321",
+    "createdAt": "2026-04-01T00:00:00Z",
+    "mergedAt": "2026-04-01T05:00:00Z",
+    "baseRefName": "main",
+    "additions": 5,
+    "deletions": 5,
+    "changedFiles": 1,
+    "author": {
+      "login": "alice",
+      "__typename": "User"
+    },
+    "labels": {
+      "nodes": []
+    },
+    "files": {
+      "nodes": []
+    },
+    "comments": {
+      "nodes": []
+    },
+    "reviews": {
+      "nodes": []
+    },
+    "reviewThreads": {
+      "nodes": []
+    },
+    "timelineItems": {
+      "nodes": []
+    }
+  },
+  "merged_30h": {
+    "number": 322,
+    "title": "merge speed 30h",
+    "body": "",
+    "url": "https://github.com/o/r/pull/322",
+    "createdAt": "2026-04-01T00:00:00Z",
+    "mergedAt": "2026-04-02T06:00:00Z",
+    "baseRefName": "main",
+    "additions": 5,
+    "deletions": 5,
+    "changedFiles": 1,
+    "author": {
+      "login": "alice",
+      "__typename": "User"
+    },
+    "labels": {
+      "nodes": []
+    },
+    "files": {
+      "nodes": []
+    },
+    "comments": {
+      "nodes": []
+    },
+    "reviews": {
+      "nodes": []
+    },
+    "reviewThreads": {
+      "nodes": []
+    },
+    "timelineItems": {
+      "nodes": []
+    }
+  },
+  "window_original": {
+    "number": 330,
+    "title": "Feature merged inside the report window",
+    "body": "",
+    "url": "https://github.com/o/r/pull/330",
+    "createdAt": "2026-05-01T00:00:00Z",
+    "mergedAt": "2026-05-01T01:00:00Z",
+    "baseRefName": "main",
+    "additions": 40,
+    "deletions": 2,
+    "changedFiles": 2,
+    "author": {
+      "login": "alice",
+      "__typename": "User"
+    },
+    "labels": {
+      "nodes": []
+    },
+    "files": {
+      "nodes": []
+    },
+    "comments": {
+      "nodes": []
+    },
+    "reviews": {
+      "nodes": []
+    },
+    "reviewThreads": {
+      "nodes": []
+    },
+    "timelineItems": {
+      "nodes": []
+    }
+  },
+  "window_revert_after_until": {
+    "number": 331,
+    "title": "revert: feature merged inside the report window",
+    "body": "Reverts #330.",
+    "url": "https://github.com/o/r/pull/331",
+    "createdAt": "2026-05-05T00:00:00Z",
+    "mergedAt": "2026-05-05T01:00:00Z",
+    "baseRefName": "main",
+    "additions": 2,
+    "deletions": 40,
+    "changedFiles": 2,
+    "author": {
+      "login": "bob",
+      "__typename": "User"
+    },
+    "labels": {
+      "nodes": []
+    },
+    "files": {
+      "nodes": []
+    },
+    "comments": {
+      "nodes": []
+    },
+    "reviews": {
+      "nodes": []
+    },
+    "reviewThreads": {
+      "nodes": []
+    },
+    "timelineItems": {
+      "nodes": []
+    }
   }
 }

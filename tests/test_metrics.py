@@ -23,6 +23,16 @@ class ReviewRoundsTests(unittest.TestCase):
     def test_zero_rounds_pushes_only_before_review(self):
         self.assertEqual(metrics.compute_review_rounds(pr("rounds_zero")), 0)
 
+    def test_three_events_only_the_pair_with_a_push_between_counts(self):
+        # Three human events (comments at 01:00, 03:00, 05:00). A push at
+        # 00:30 sits before the first event and never counts; a push at
+        # 02:00 sits strictly between the first and second event and counts
+        # once; no push sits between the second and third. -> 1 round, not 0
+        # (proving the "push before first review" case doesn't leak into a
+        # later pair) and not 2 (proving only pairs with a push between them
+        # count).
+        self.assertEqual(metrics.compute_review_rounds(pr("rounds_three_mixed")), 1)
+
 
 class ApprovalClassTests(unittest.TestCase):
     def test_substantive(self):
@@ -40,6 +50,23 @@ class ApprovalClassTests(unittest.TestCase):
     def test_silent_small_pr_fast_approval(self):
         classes = metrics.compute_approval_classes(pr("approval_silent"))
         self.assertEqual(classes["frank"], "silent")
+
+    def test_rubber_stamp_at_4_minutes_after_last_push(self):
+        classes = metrics.compute_approval_classes(pr("rubber_stamp_4min"))
+        self.assertEqual(classes["ivan"], "rubber_stamp")
+
+    def test_silent_at_6_minutes_after_last_push(self):
+        # Same setup as the 4-minute case, just past the 5-minute bar.
+        classes = metrics.compute_approval_classes(pr("rubber_stamp_6min"))
+        self.assertEqual(classes["ivan"], "silent")
+
+    def test_late_review_request_moves_the_reference_point(self):
+        # The push happened over an hour before the approval, but a review
+        # request to this reviewer landed only 4 minutes before it. The
+        # reference is the latest of ready/last-push/last-request, so the
+        # request -- not the earlier push -- decides this is rubber_stamp.
+        classes = metrics.compute_approval_classes(pr("rubber_stamp_late_request"))
+        self.assertEqual(classes["ivan"], "rubber_stamp")
 
     def test_commented_when_push_only_after_approval(self):
         # comment+approve back to back, then a rebase before merge: the push
@@ -61,12 +88,42 @@ class ApprovalClassTests(unittest.TestCase):
         self.assertEqual(classes["heidi"], "commented")
 
 
+class BotReviewNeverCountsAsHumanTests(unittest.TestCase):
+    def test_bot_approval_excluded_from_approval_classes(self):
+        self.assertEqual(metrics.compute_approval_classes(pr("bot_approval")), {})
+
+    def test_bot_approval_does_not_make_reviewed_group_human_approved(self):
+        self.assertEqual(metrics.compute_reviewed_group(pr("bot_approval")), "bot-only")
+
+    def test_bot_approval_does_not_count_as_first_human_review_or_approval(self):
+        facts = metrics.compute_all_facts([pr("bot_approval")], fix_window_days=7)[801]
+        self.assertIsNone(facts.time_to_first_human_review_h)
+        self.assertIsNone(facts.time_to_first_approval_h)
+
+
 class RevertTests(unittest.TestCase):
     def test_matched_by_body_reference(self):
         original = pr("revert_original")
         revert = pr("revert_pr")
         reverted_by = metrics.compute_reverts([original, revert])
         self.assertEqual(reverted_by, {300: [301]})
+
+    def test_matched_by_quoted_title_with_no_body_reference(self):
+        original = pr("revert_quoted_original")
+        revert = pr("revert_quoted_pr")
+        self.assertEqual(revert.body, "")
+        reverted_by = metrics.compute_reverts([original, revert])
+        self.assertEqual(reverted_by, {310: [311]})
+
+    def test_revert_rate_excludes_revert_prs_from_denominator(self):
+        original = pr("revert_quoted_original")
+        revert = pr("revert_quoted_pr")
+        facts = metrics.compute_all_facts([original, revert], fix_window_days=7)
+        out = metrics.aggregate_group([original, revert], facts, date(2026, 1, 1), date(2026, 1, 31))
+        # 1 reverted PR out of 1 non-revert PR: the revert PR itself is
+        # excluded from the denominator, or this would read 0.5.
+        self.assertEqual(out["revert_rate"], 1.0)
+        self.assertEqual(out["revert_count"], 1)
 
 
 class FollowupFixTests(unittest.TestCase):
@@ -126,6 +183,50 @@ class ThroughputTests(unittest.TestCase):
         facts = {pr("rounds_two").number: metrics.compute_all_facts([pr("rounds_two")], 7)[pr("rounds_two").number]}
         out = metrics.aggregate_group(prs, facts, since, until)
         self.assertEqual(out["throughput_per_week"], 7.0)
+
+
+class ReportWindowTests(unittest.TestCase):
+    def test_revert_merged_after_until_still_marks_earlier_pr_reverted(self):
+        # The revert PR merges 2026-05-05, after --until=2026-05-02, but
+        # inside the fix window. It must not appear in the reported groups
+        # itself, while still marking PR 330 (merged inside the window) as
+        # reverted -- exactly what cli.main does by computing facts over
+        # every fetched PR and only filtering the *group* membership.
+        original = pr("window_original")
+        revert = pr("window_revert_after_until")
+        since, until = date(2026, 5, 1), date(2026, 5, 2)
+        facts = metrics.compute_all_facts([original, revert], fix_window_days=7)
+        self.assertTrue(facts[330].reverted)
+        self.assertEqual(facts[330].reverted_by, [331])
+
+        reportable = [p for p in (original, revert) if p.merged and since <= p.merged.date() <= until]
+        self.assertEqual([p.number for p in reportable], [330])
+
+        groups = metrics.group_prs(reportable, facts, None)
+        out = metrics.aggregate_group(groups["all"], facts, since, until)
+        self.assertEqual(out["count"], 1)
+        self.assertEqual(out["revert_rate"], 1.0)
+
+
+class MergedWithinSharesTests(unittest.TestCase):
+    def test_1h_and_24h_shares_on_mixed_merge_times(self):
+        prs = [pr("merged_0_5h"), pr("merged_5h"), pr("merged_30h")]
+        facts = metrics.compute_all_facts(prs, fix_window_days=7)
+        out = metrics.aggregate_group(prs, facts, date(2026, 4, 1), date(2026, 4, 30))
+        # 0.5h counts in both; 5h only in the 24h share; 30h in neither.
+        self.assertAlmostEqual(out["merged_within_1h"], 1 / 3, places=3)
+        self.assertAlmostEqual(out["merged_within_24h"], 2 / 3, places=3)
+
+
+class TimeToMergeFromCreatedTests(unittest.TestCase):
+    def test_time_to_merge_uses_created_not_ready(self):
+        # Opened as a draft at 00:00, marked ready at 02:00, merged at
+        # 03:00: time_to_merge is 3h from creation, ready_to_merge is 1h
+        # from the ready event -- distinct numbers proving each uses its
+        # own reference point.
+        facts = metrics.compute_all_facts([pr("draft_then_ready")], fix_window_days=7)[240]
+        self.assertAlmostEqual(facts.time_to_merge_h, 3.0)
+        self.assertAlmostEqual(facts.ready_to_merge_h, 1.0)
 
 
 class DepthGroupTests(unittest.TestCase):
