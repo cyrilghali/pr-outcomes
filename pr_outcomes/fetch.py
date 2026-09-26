@@ -8,9 +8,11 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
+from datetime import time as time_of_day
 
 CACHE_ROOT = os.path.expanduser("~/.cache/pr-outcomes")
 
@@ -93,6 +95,17 @@ def _parse_dt(s: str) -> datetime:
     return datetime.fromisoformat(s.replace("Z", "+00:00"))
 
 
+TRANSIENT_ERROR_MARKERS = (
+    "rate limit", "abuse", "was submitted too quickly", "timeout", "502", "504",
+)
+RETRY_BACKOFF_SECONDS = (2, 4, 8, 16)
+
+
+def _is_transient_gh_error(stderr: str) -> bool:
+    lowered = stderr.lower()
+    return any(marker in lowered for marker in TRANSIENT_ERROR_MARKERS)
+
+
 def _run_gh_graphql(query: str, variables: dict) -> dict:
     args = ["gh", "api", "graphql", "-f", f"query={query}"]
     for key, value in variables.items():
@@ -102,10 +115,21 @@ def _run_gh_graphql(query: str, variables: dict) -> dict:
         # not as the string -f always produces.
         flag = "-F" if isinstance(value, int) else "-f"
         args += [flag, f"{key}={value}"]
-    proc = subprocess.run(args, capture_output=True, text=True)
-    if proc.returncode != 0:
-        raise GhError(proc.stderr.strip())
-    return json.loads(proc.stdout)
+
+    for attempt, backoff in enumerate((*RETRY_BACKOFF_SECONDS, None)):
+        proc = subprocess.run(args, capture_output=True, text=True)
+        if proc.returncode == 0:
+            return json.loads(proc.stdout)
+        stderr = proc.stderr.strip()
+        if backoff is None or not _is_transient_gh_error(stderr):
+            raise GhError(stderr)
+        print(
+            f"pr-outcomes: transient gh error ({stderr[:120]}), retrying in {backoff}s "
+            f"(attempt {attempt + 1}/{len(RETRY_BACKOFF_SECONDS)})",
+            file=sys.stderr,
+        )
+        time.sleep(backoff)
+    raise AssertionError("unreachable")
 
 
 def get_default_branch(owner: str, name: str) -> str:
@@ -300,7 +324,7 @@ def _chunk_reusable(path: str, to: date) -> bool:
     lost forever."""
     if not os.path.exists(path):
         return False
-    chunk_end = datetime.combine(to + timedelta(days=1), time(), tzinfo=timezone.utc)
+    chunk_end = datetime.combine(to + timedelta(days=1), time_of_day(), tzinfo=timezone.utc)
     mtime = datetime.fromtimestamp(os.path.getmtime(path), tz=timezone.utc)
     return mtime > chunk_end
 
