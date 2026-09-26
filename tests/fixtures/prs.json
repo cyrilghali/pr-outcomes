@@ -1,0 +1,204 @@
+{
+  "rounds_two": {
+    "number": 100, "title": "Add widget", "body": "", "url": "https://github.com/o/r/pull/100",
+    "createdAt": "2026-01-01T00:00:00Z", "mergedAt": "2026-01-01T06:00:00Z",
+    "baseRefName": "main", "additions": 20, "deletions": 5, "changedFiles": 2,
+    "author": {"login": "alice", "__typename": "User"},
+    "labels": {"nodes": []}, "files": {"nodes": []},
+    "comments": {"nodes": [
+      {"author": {"login": "bob", "__typename": "User"}, "createdAt": "2026-01-01T01:00:00Z"},
+      {"author": {"login": "bob", "__typename": "User"}, "createdAt": "2026-01-01T03:00:00Z"},
+      {"author": {"login": "bob", "__typename": "User"}, "createdAt": "2026-01-01T05:00:00Z"}
+    ]},
+    "reviews": {"nodes": []},
+    "reviewThreads": {"nodes": []},
+    "timelineItems": {"nodes": [
+      {"__typename": "PullRequestCommit", "commit": {"committedDate": "2026-01-01T00:10:00Z"}},
+      {"__typename": "PullRequestCommit", "commit": {"committedDate": "2026-01-01T02:00:00Z"}},
+      {"__typename": "PullRequestCommit", "commit": {"committedDate": "2026-01-01T04:00:00Z"}}
+    ]}
+  },
+  "rounds_zero": {
+    "number": 101, "title": "Tweak copy", "body": "", "url": "https://github.com/o/r/pull/101",
+    "createdAt": "2026-01-02T00:00:00Z", "mergedAt": "2026-01-02T02:00:00Z",
+    "baseRefName": "main", "additions": 3, "deletions": 1, "changedFiles": 1,
+    "author": {"login": "alice", "__typename": "User"},
+    "labels": {"nodes": []}, "files": {"nodes": []},
+    "comments": {"nodes": [
+      {"author": {"login": "bob", "__typename": "User"}, "createdAt": "2026-01-02T01:00:00Z"}
+    ]},
+    "reviews": {"nodes": []},
+    "reviewThreads": {"nodes": []},
+    "timelineItems": {"nodes": [
+      {"__typename": "PullRequestCommit", "commit": {"committedDate": "2026-01-02T00:10:00Z"}},
+      {"__typename": "PullRequestCommit", "commit": {"committedDate": "2026-01-02T00:20:00Z"}}
+    ]}
+  },
+  "approval_substantive": {
+    "number": 200, "title": "Refactor billing", "body": "", "url": "https://github.com/o/r/pull/200",
+    "createdAt": "2026-01-03T00:00:00Z", "mergedAt": "2026-01-03T04:00:00Z",
+    "baseRefName": "main", "additions": 50, "deletions": 10, "changedFiles": 3,
+    "author": {"login": "alice", "__typename": "User"},
+    "labels": {"nodes": []}, "files": {"nodes": []},
+    "comments": {"nodes": []},
+    "reviews": {"nodes": [
+      {"author": {"login": "carol", "__typename": "User"}, "state": "COMMENTED", "submittedAt": "2026-01-03T01:00:00Z", "body": "please fix X", "comments": {"totalCount": 0}},
+      {"author": {"login": "carol", "__typename": "User"}, "state": "APPROVED", "submittedAt": "2026-01-03T03:00:00Z", "body": "", "comments": {"totalCount": 0}}
+    ]},
+    "reviewThreads": {"nodes": []},
+    "timelineItems": {"nodes": [
+      {"__typename": "PullRequestCommit", "commit": {"committedDate": "2026-01-03T02:00:00Z"}}
+    ]}
+  },
+  "approval_commented": {
+    "number": 201, "title": "Rename fields", "body": "", "url": "https://github.com/o/r/pull/201",
+    "createdAt": "2026-01-04T00:00:00Z", "mergedAt": "2026-01-04T03:00:00Z",
+    "baseRefName": "main", "additions": 15, "deletions": 5, "changedFiles": 2,
+    "author": {"login": "alice", "__typename": "User"},
+    "labels": {"nodes": []}, "files": {"nodes": []},
+    "comments": {"nodes": []},
+    "reviews": {"nodes": [
+      {"author": {"login": "dave", "__typename": "User"}, "state": "COMMENTED", "submittedAt": "2026-01-04T01:00:00Z", "body": "nit: rename", "comments": {"totalCount": 0}},
+      {"author": {"login": "dave", "__typename": "User"}, "state": "APPROVED", "submittedAt": "2026-01-04T02:00:00Z", "body": "", "comments": {"totalCount": 0}}
+    ]},
+    "reviewThreads": {"nodes": []},
+    "timelineItems": {"nodes": []}
+  },
+  "approval_rubber_stamp": {
+    "number": 202, "title": "Bulk migration", "body": "", "url": "https://github.com/o/r/pull/202",
+    "createdAt": "2026-01-05T00:00:00Z", "mergedAt": "2026-01-05T01:00:00Z",
+    "baseRefName": "main", "additions": 150, "deletions": 60, "changedFiles": 5,
+    "author": {"login": "alice", "__typename": "User"},
+    "labels": {"nodes": []}, "files": {"nodes": []},
+    "comments": {"nodes": []},
+    "reviews": {"nodes": [
+      {"author": {"login": "erin", "__typename": "User"}, "state": "APPROVED", "submittedAt": "2026-01-05T00:09:00Z", "body": "", "comments": {"totalCount": 0}}
+    ]},
+    "reviewThreads": {"nodes": []},
+    "timelineItems": {"nodes": [
+      {"__typename": "ReadyForReviewEvent", "createdAt": "2026-01-05T00:05:00Z"},
+      {"__typename": "ReviewRequestedEvent", "createdAt": "2026-01-05T00:06:00Z", "requestedReviewer": {"login": "erin"}},
+      {"__typename": "PullRequestCommit", "commit": {"committedDate": "2026-01-05T00:07:00Z"}}
+    ]}
+  },
+  "approval_silent": {
+    "number": 203, "title": "Small fix", "body": "", "url": "https://github.com/o/r/pull/203",
+    "createdAt": "2026-01-06T00:00:00Z", "mergedAt": "2026-01-06T00:10:00Z",
+    "baseRefName": "main", "additions": 10, "deletions": 5, "changedFiles": 1,
+    "author": {"login": "alice", "__typename": "User"},
+    "labels": {"nodes": []}, "files": {"nodes": []},
+    "comments": {"nodes": []},
+    "reviews": {"nodes": [
+      {"author": {"login": "frank", "__typename": "User"}, "state": "APPROVED", "submittedAt": "2026-01-06T00:03:00Z", "body": "", "comments": {"totalCount": 0}}
+    ]},
+    "reviewThreads": {"nodes": []},
+    "timelineItems": {"nodes": []}
+  },
+  "revert_original": {
+    "number": 300, "title": "Add feature Y", "body": "", "url": "https://github.com/o/r/pull/300",
+    "createdAt": "2026-01-07T00:00:00Z", "mergedAt": "2026-01-07T01:00:00Z",
+    "baseRefName": "main", "additions": 40, "deletions": 2, "changedFiles": 2,
+    "author": {"login": "alice", "__typename": "User"},
+    "labels": {"nodes": []}, "files": {"nodes": [{"path": "lib/foo.ex"}]},
+    "comments": {"nodes": []}, "reviews": {"nodes": []}, "reviewThreads": {"nodes": []},
+    "timelineItems": {"nodes": []}
+  },
+  "revert_pr": {
+    "number": 301, "title": "revert: add feature Y", "body": "Reverts #300 because it broke prod.", "url": "https://github.com/o/r/pull/301",
+    "createdAt": "2026-01-08T00:00:00Z", "mergedAt": "2026-01-08T01:00:00Z",
+    "baseRefName": "main", "additions": 2, "deletions": 40, "changedFiles": 2,
+    "author": {"login": "bob", "__typename": "User"},
+    "labels": {"nodes": []}, "files": {"nodes": [{"path": "lib/foo.ex"}]},
+    "comments": {"nodes": []}, "reviews": {"nodes": []}, "reviewThreads": {"nodes": []},
+    "timelineItems": {"nodes": []}
+  },
+  "bot_only": {
+    "number": 800, "title": "Update deps", "body": "", "url": "https://github.com/o/r/pull/800",
+    "createdAt": "2026-01-10T00:00:00Z", "mergedAt": "2026-01-10T01:00:00Z",
+    "baseRefName": "main", "additions": 5, "deletions": 5, "changedFiles": 1,
+    "author": {"login": "alice", "__typename": "User"},
+    "labels": {"nodes": []}, "files": {"nodes": []},
+    "comments": {"nodes": []},
+    "reviews": {"nodes": [
+      {"author": {"login": "cubic-dev-ai", "__typename": "Bot"}, "state": "COMMENTED", "submittedAt": "2026-01-10T00:30:00Z", "body": "Looks fine", "comments": {"totalCount": 0}}
+    ]},
+    "reviewThreads": {"nodes": []},
+    "timelineItems": {"nodes": []}
+  },
+  "no_review": {
+    "number": 801, "title": "Doc typo", "body": "", "url": "https://github.com/o/r/pull/801",
+    "createdAt": "2026-01-11T00:00:00Z", "mergedAt": "2026-01-11T00:30:00Z",
+    "baseRefName": "main", "additions": 1, "deletions": 1, "changedFiles": 1,
+    "author": {"login": "alice", "__typename": "User"},
+    "labels": {"nodes": []}, "files": {"nodes": []},
+    "comments": {"nodes": []}, "reviews": {"nodes": []}, "reviewThreads": {"nodes": []},
+    "timelineItems": {"nodes": []}
+  },
+  "human_approved": {
+    "number": 802, "title": "New endpoint", "body": "", "url": "https://github.com/o/r/pull/802",
+    "createdAt": "2026-01-12T00:00:00Z", "mergedAt": "2026-01-12T02:00:00Z",
+    "baseRefName": "main", "additions": 30, "deletions": 5, "changedFiles": 2,
+    "author": {"login": "alice", "__typename": "User"},
+    "labels": {"nodes": []}, "files": {"nodes": []},
+    "comments": {"nodes": []},
+    "reviews": {"nodes": [
+      {"author": {"login": "grace", "__typename": "User"}, "state": "APPROVED", "submittedAt": "2026-01-12T01:00:00Z", "body": "lgtm", "comments": {"totalCount": 0}}
+    ]},
+    "reviewThreads": {"nodes": []},
+    "timelineItems": {"nodes": []}
+  },
+  "followup_match_original": {
+    "number": 500, "title": "Parser rewrite", "body": "", "url": "https://github.com/o/r/pull/500",
+    "createdAt": "2026-02-01T00:00:00Z", "mergedAt": "2026-02-01T01:00:00Z",
+    "baseRefName": "main", "additions": 20, "deletions": 2, "changedFiles": 1,
+    "author": {"login": "alice", "__typename": "User"},
+    "labels": {"nodes": []}, "files": {"nodes": [{"path": "lib/parser.ex"}]},
+    "comments": {"nodes": []}, "reviews": {"nodes": []}, "reviewThreads": {"nodes": []},
+    "timelineItems": {"nodes": []}
+  },
+  "followup_match_fix": {
+    "number": 501, "title": "fix: parser crash", "body": "", "url": "https://github.com/o/r/pull/501",
+    "createdAt": "2026-02-02T00:00:00Z", "mergedAt": "2026-02-02T01:00:00Z",
+    "baseRefName": "main", "additions": 5, "deletions": 1, "changedFiles": 1,
+    "author": {"login": "bob", "__typename": "User"},
+    "labels": {"nodes": []}, "files": {"nodes": [{"path": "lib/parser.ex"}, {"path": "lib/other.ex"}]},
+    "comments": {"nodes": []}, "reviews": {"nodes": []}, "reviewThreads": {"nodes": []},
+    "timelineItems": {"nodes": []}
+  },
+  "followup_hotfile_original": {
+    "number": 600, "title": "Config tweak", "body": "", "url": "https://github.com/o/r/pull/600",
+    "createdAt": "2026-02-03T00:00:00Z", "mergedAt": "2026-02-03T01:00:00Z",
+    "baseRefName": "main", "additions": 10, "deletions": 1, "changedFiles": 1,
+    "author": {"login": "alice", "__typename": "User"},
+    "labels": {"nodes": []}, "files": {"nodes": [{"path": "lib/config.ex"}]},
+    "comments": {"nodes": []}, "reviews": {"nodes": []}, "reviewThreads": {"nodes": []},
+    "timelineItems": {"nodes": []}
+  },
+  "followup_hotfile_fix": {
+    "number": 601, "title": "fix: config typo", "body": "", "url": "https://github.com/o/r/pull/601",
+    "createdAt": "2026-02-04T00:00:00Z", "mergedAt": "2026-02-04T01:00:00Z",
+    "baseRefName": "main", "additions": 1, "deletions": 1, "changedFiles": 1,
+    "author": {"login": "bob", "__typename": "User"},
+    "labels": {"nodes": []}, "files": {"nodes": [{"path": "lib/config.ex"}]},
+    "comments": {"nodes": []}, "reviews": {"nodes": []}, "reviewThreads": {"nodes": []},
+    "timelineItems": {"nodes": []}
+  },
+  "followup_lockfile_original": {
+    "number": 700, "title": "Bump dep", "body": "", "url": "https://github.com/o/r/pull/700",
+    "createdAt": "2026-02-05T00:00:00Z", "mergedAt": "2026-02-05T01:00:00Z",
+    "baseRefName": "main", "additions": 3, "deletions": 3, "changedFiles": 1,
+    "author": {"login": "alice", "__typename": "User"},
+    "labels": {"nodes": []}, "files": {"nodes": [{"path": "mix.lock"}]},
+    "comments": {"nodes": []}, "reviews": {"nodes": []}, "reviewThreads": {"nodes": []},
+    "timelineItems": {"nodes": []}
+  },
+  "followup_lockfile_fix": {
+    "number": 701, "title": "fix: dep bump", "body": "", "url": "https://github.com/o/r/pull/701",
+    "createdAt": "2026-02-06T00:00:00Z", "mergedAt": "2026-02-06T01:00:00Z",
+    "baseRefName": "main", "additions": 1, "deletions": 1, "changedFiles": 1,
+    "author": {"login": "bob", "__typename": "User"},
+    "labels": {"nodes": []}, "files": {"nodes": [{"path": "mix.lock"}]},
+    "comments": {"nodes": []}, "reviews": {"nodes": []}, "reviewThreads": {"nodes": []},
+    "timelineItems": {"nodes": []}
+  }
+}
