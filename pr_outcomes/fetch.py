@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -55,6 +56,7 @@ query($owner:String!,$name:String!){ repository(owner:$owner,name:$name){ defaul
 """
 
 TRUNCATION_WARNING_KEYS = ("reviews", "comments", "reviewThreads")
+CUBIC_SCORE_RE = re.compile(r"cubic:review-summary:confidence-score:(\d)/5")
 
 
 @dataclass(frozen=True)
@@ -89,6 +91,7 @@ class PR:
     changed_files: int
     labels: list[str] = field(default_factory=list)
     events: list[Event] = field(default_factory=list)
+    cubic_score: int | None = None  # last Cubic confidence score (1-5) submitted before merge
 
 
 class GhError(RuntimeError):
@@ -199,8 +202,13 @@ def normalise_pr(node: JSON) -> PR:
                 requested=requested,
             ))
 
+    merged = _parse_dt(node["mergedAt"]) if node.get("mergedAt") else None
+    cubic_score: int | None = None
     for review in node.get("reviews", {}).get("nodes", []):
         reviewer = _actor_from_json(review.get("author"))
+        score = CUBIC_SCORE_RE.search(review.get("body") or "")
+        if score and (merged is None or _parse_dt(review["submittedAt"]) <= merged):
+            cubic_score = int(score.group(1))  # reviews come oldest first, so the last one wins
         if reviewer.login == author.login:
             continue  # the PR author's own reviews never count
         at = _parse_dt(review["submittedAt"])
@@ -236,7 +244,6 @@ def normalise_pr(node: JSON) -> PR:
 
     events.sort(key=lambda e: e.at)
     created = _parse_dt(node["createdAt"])
-    merged = _parse_dt(node["mergedAt"]) if node.get("mergedAt") else None
 
     return PR(
         number=node["number"],
@@ -253,6 +260,7 @@ def normalise_pr(node: JSON) -> PR:
         changed_files=node.get("changedFiles", 0),
         labels=[l["name"] for l in node.get("labels", {}).get("nodes", [])],
         events=events,
+        cubic_score=cubic_score,
     )
 
 

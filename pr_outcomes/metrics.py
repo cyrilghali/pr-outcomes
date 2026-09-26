@@ -56,6 +56,7 @@ class PRFacts:
     followup_fix_by: list[int] = field(default_factory=list)
     labels: list[str] = field(default_factory=list)
     author: str = ""
+    cubic_score: int | None = None
 
 
 def _hours(a: datetime | None, b: datetime | None) -> float | None:
@@ -211,6 +212,7 @@ def compute_all_facts(prs: list[PR], fix_window_days: int, followup_by_fix: dict
             followup_fix_by=followups,
             labels=pr.labels,
             author=pr.author.login,
+            cubic_score=pr.cubic_score,
         )
     return facts
 
@@ -432,6 +434,10 @@ def aggregate_group(prs: list[PR], facts: dict[int, PRFacts], since: date, until
     out["review_rounds_ge1_share"] = _share(sum(1 for r in rounds if r >= 1), len(rounds))
     out["human_comments_mean"] = _mean([f.human_comments for f in group_facts])
     out["bot_comments_mean"] = _mean([f.bot_comments for f in group_facts])
+    scores = [f.cubic_score for f in group_facts if f.cubic_score is not None]
+    out["cubic_scored_share"] = _share(len(scores), len(group_facts))
+    out["cubic_score_mean"] = _mean(scores)
+    out["cubic_5_share"] = _share(sum(1 for s in scores if s == 5), len(scores))
 
     # Speed
     for metric in (

@@ -26,6 +26,9 @@ DEFINITIONS = {
     "review_rounds_ge1_share": "Share of PRs with at least one review round (0-1).",
     "human_comments_mean": "Mean number of human comments per PR.",
     "bot_comments_mean": "Mean number of bot comments per PR.",
+    "cubic_scored_share": "Share of PRs with a Cubic confidence score submitted before merge (0-1).",
+    "cubic_score_mean": "Mean of the last Cubic confidence score (1-5) before merge, over scored PRs.",
+    "cubic_5_share": "Share of scored PRs whose last Cubic score before merge was 5/5 (0-1).",
     "time_to_first_human_review_h_median": "Median hours from PR creation to first human review or comment.",
     "time_to_first_human_review_h_p75": "75th percentile hours from PR creation to first human review or comment.",
     "time_to_first_bot_review_h_median": "Median hours from PR creation to first bot review or comment.",
@@ -57,6 +60,9 @@ REVIEW_DEPTH_ROWS = [
     ("review_rounds_ge1_share", "PRs with >=1 round"),
     ("human_comments_mean", "Human comments (mean)"),
     ("bot_comments_mean", "Bot comments (mean)"),
+    ("cubic_scored_share", "PRs with a Cubic score"),
+    ("cubic_score_mean", "Cubic score before merge (mean)"),
+    ("cubic_5_share", "Cubic 5/5 before merge"),
 ]
 SPEED_ROWS = [
     ("time_to_first_human_review_h_median", "Time to first human review, h (median)"),
@@ -89,7 +95,7 @@ def _fmt_share(value: float | None) -> str:
 SHARE_KEYS = {
     "revert_rate", "followup_fix_rate", "approval_share_changed_by_review",
     "approval_share_commented", "approval_share_silent", "approval_share_rubber_stamp",
-    "review_rounds_ge1_share", "merged_within_1h", "merged_within_24h",
+    "review_rounds_ge1_share", "cubic_scored_share", "cubic_5_share", "merged_within_1h", "merged_within_24h",
 }
 
 
@@ -139,6 +145,7 @@ def build_pr_json(pr: fetch.PR, fact: metrics.PRFacts) -> dict[str, Any]:
         "time_to_merge_h": fact.time_to_merge_h,
         "ready_to_merge_h": fact.ready_to_merge_h,
         "review_rounds": fact.review_rounds,
+        "cubic_score": fact.cubic_score,
         "changes_requested": fact.changes_requested,
         "human_comments": fact.human_comments,
         "bot_comments": fact.bot_comments,

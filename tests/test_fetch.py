@@ -158,3 +158,19 @@ class FetchOrgTeamsTests(unittest.TestCase):
                 teams_by_login, warnings = fetch.fetch_org_teams("acme", "widgets")
             run.assert_called_once()
         self.assertEqual(teams_by_login, {})
+
+
+class CubicScoreTest(unittest.TestCase):
+    def test_last_score_before_merge_wins(self):
+        def review(at: str, score: int) -> dict[str, object]:
+            return {"author": {"login": "cubic-dev-ai", "__typename": "Bot"}, "state": "COMMENTED",
+                    "submittedAt": at, "comments": {"totalCount": 0},
+                    "body": f"<!-- cubic:review-summary:confidence-score:{score}/5 -->"}
+        node = {
+            "number": 1, "title": "t", "url": "u", "author": {"login": "a"}, "baseRefName": "staging",
+            "createdAt": "2026-09-01T00:00:00Z", "mergedAt": "2026-09-01T12:00:00Z",
+            "reviews": {"nodes": [review("2026-09-01T01:00:00Z", 3), review("2026-09-01T02:00:00Z", 5),
+                                  review("2026-09-01T13:00:00Z", 2)]},
+            "timelineItems": {"nodes": []},
+        }
+        self.assertEqual(fetch.normalise_pr(node).cubic_score, 5)
