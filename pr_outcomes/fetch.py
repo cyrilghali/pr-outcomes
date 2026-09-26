@@ -10,7 +10,7 @@ import sys
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 
 CACHE_ROOT = os.path.expanduser("~/.cache/pr-outcomes")
 
@@ -292,11 +292,22 @@ def _fetch_chunk_nodes(owner: str, name: str, base: str, frm: date, to: date) ->
     return [merge_timeline_into_node(n, t) for n, t in zip(nodes, timelines)]
 
 
+def _chunk_reusable(path: str, to: date) -> bool:
+    """A cached chunk is only safe to reuse once the chunk's last day is
+    fully over in UTC (GitHub search dates are UTC) as of when the cache
+    file was written. A chunk fetched while its last day was still in
+    progress must be refetched, or PRs merged later that day are silently
+    lost forever."""
+    if not os.path.exists(path):
+        return False
+    chunk_end = datetime.combine(to + timedelta(days=1), time(), tzinfo=timezone.utc)
+    mtime = datetime.fromtimestamp(os.path.getmtime(path), tz=timezone.utc)
+    return mtime > chunk_end
+
+
 def _load_or_fetch_chunk(owner: str, name: str, base: str, frm: date, to: date, refresh: bool) -> list[dict]:
     path = _cache_path(owner, name, base, frm, to)
-    today = date.today()
-    reusable_forever = to < today
-    if not refresh and reusable_forever and os.path.exists(path):
+    if not refresh and _chunk_reusable(path, to):
         print(f"pr-outcomes: cache hit {frm}..{to}", file=sys.stderr)
         with open(path) as f:
             return json.load(f)
@@ -321,7 +332,7 @@ def fetch_prs(owner: str, name: str, base: str, since: date, until: date, fix_wi
     """Fetch every merged PR in [since, min(until + fix_window_days, today)],
     normalised to PR dataclasses, newest-fetch-range chunks refetched, older
     ones cached forever on disk."""
-    today = date.today()
+    today = datetime.now(timezone.utc).date()
     fetch_until = min(until + timedelta(days=fix_window_days), today)
     all_nodes: list[dict] = []
     for frm, to in _week_chunks(since, fetch_until):
