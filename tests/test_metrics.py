@@ -239,7 +239,7 @@ class ProductionMetricsTests(unittest.TestCase):
         facts = metrics.compute_all_facts(prs, fix_window_days=7)
         out = metrics.aggregate_group(prs, facts, date(2026, 4, 1), date(2026, 4, 30))
         for key in (
-            "lead_time_to_prod_h_median", "lead_time_to_prod_h_p75", "not_deployed_count",
+            "lead_time_to_prod_h_median", "lead_time_to_prod_h_p75", "no_deploy_found_count",
             "deploy_count", "deploys_per_week", "change_failure_rate", "failed_deploy_count",
             "sentry_new_issue_count", "sentry_new_issue_pr_share",
         ):
@@ -269,19 +269,19 @@ class ProductionMetricsTests(unittest.TestCase):
         )
 
         self.assertEqual(out["deploy_count"], 2)
-        self.assertEqual(out["not_deployed_count"], 0)
+        self.assertEqual(out["no_deploy_found_count"], 0)
         self.assertEqual(out["lead_time_to_prod_h_median"], 4.0)
         self.assertEqual(out["lead_time_to_prod_h_p75"], 16.5)
         self.assertEqual(out["failed_deploy_count"], 1)
         self.assertEqual(out["change_failure_rate"], 0.5)
 
-    def test_not_deployed_count_for_prs_with_no_deploy(self):
+    def test_no_deploy_found_count_for_prs_with_no_deploy(self):
         p1, p2 = pr("merged_0_5h"), pr("merged_5h")
         facts = metrics.compute_all_facts([p1, p2], fix_window_days=7, deploy_by_pr={})
         out = metrics.aggregate_group(
             [p1, p2], facts, date(2026, 4, 1), date(2026, 4, 30), production=True,
         )
-        self.assertEqual(out["not_deployed_count"], 2)
+        self.assertEqual(out["no_deploy_found_count"], 2)
         self.assertIsNone(out["lead_time_to_prod_h_median"])
         self.assertIsNone(out["change_failure_rate"])
 

@@ -143,7 +143,7 @@ def build_deploys(
         if last_date < until:
             warnings.append(
                 f"origin/production was last updated {last_date}; PRs deployed after that count "
-                "as not deployed (the clone is never fetched)"
+                "as having no deploy found (the clone is never fetched)"
             )
 
     created_from = since - timedelta(days=7)

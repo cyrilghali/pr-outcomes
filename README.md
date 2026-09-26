@@ -159,7 +159,7 @@ With `--production` (and optionally `--sentry ORG/PROJECT`):
 
 | Metric | Definition |
 |---|---|
-| Lead time to production | Hours from PR merge to the production deploy that shipped it (median, p75). Null for a PR not yet in a known deploy. |
+| Lead time to production | Hours from PR merge to the production deploy that shipped it (median, p75). Null for a PR with no deploy found (`no_deploy_found_count`). |
 | Deploy frequency | `deploy_count` (distinct production deploys carrying this group's PRs) and `deploys_per_week`. |
 | Change failure rate | Share of this group's deploys where a shipped PR was later reverted or blamed for a follow-up fix. |
 | Sentry new issues | `sentry_new_issue_count` (new production issues attributed to this group's PRs) and `sentry_new_issue_pr_share` (share of deployed PRs with at least one), via blame at the deploy that shipped them. |
@@ -170,12 +170,19 @@ Limits:
   group's PRs, not the group's own deploys in isolation: a deploy shared
   across groups counts for each.
 - The clone in `--repo-path` is never fetched, so a stale local
-  `origin/production` makes recently-deployed PRs look not-deployed.
+  `origin/production` makes recently-deployed PRs count as having no deploy.
+- A stacked PR that GitHub marks merged through another PR's merge commit
+  has no merge commit of its own on `staging`, so it counts under
+  `no_deploy_found_count` even though it shipped: 28 of 1,776 PRs on
+  `tryriot/parrot`, 2026-08-01..09-18.
 - Change failure rate inherits the revert and follow-up-fix detection
   limits above, and counts code remediation, not customer-facing incidents.
+  Follow-up fixes dominate it: on `tryriot/parrot`, 2026-08-01..09-18, it
+  was 40% (95 of 236 deploys), with 92 deploys carrying a follow-up-fixed
+  PR and 6 a reverted one, at a median of 6 PRs per deploy.
 - Sentry attribution is precise but rare: on `tryriot/parrot`,
-  2026-08-01..09-18, 5 of 558 new production issues were attributed (130 had
-  no in-app stack frames), because most new issues fail on lines older than
+  `--since 2026-08-01 --until 2026-09-18`, 7 of 630 new production issues
+  were attributed (163 had no in-app stack frames), because most new issues fail on lines older than
   the deploy that shipped them. Every Sentry issue here has priority
   "high", so "any new issue after a deploy" isn't a useful signal on its
   own (82% of deploys have one within 4 hours). Time to recover and Datadog

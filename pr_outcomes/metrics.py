@@ -496,7 +496,7 @@ def aggregate_group(
         lead_med, lead_p75 = _median_p75([f.lead_time_to_prod_h for f in deployed])
         out["lead_time_to_prod_h_median"] = lead_med
         out["lead_time_to_prod_h_p75"] = lead_p75
-        out["not_deployed_count"] = len(group_facts) - len(deployed)
+        out["no_deploy_found_count"] = len(group_facts) - len(deployed)
 
         distinct_deploys = {f.deploy_sha for f in deployed}
         out["deploy_count"] = len(distinct_deploys)

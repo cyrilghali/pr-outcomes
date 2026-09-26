@@ -49,7 +49,7 @@ DEFINITIONS = {
     "size_p75": "75th percentile PR size, additions + deletions, in lines.",
     "lead_time_to_prod_h_median": "Median hours from PR merge to production deploy; null without --production.",
     "lead_time_to_prod_h_p75": "75th percentile hours from PR merge to production deploy; null without --production.",
-    "not_deployed_count": "Number of PRs not yet in a known production deploy.",
+    "no_deploy_found_count": "Number of PRs with no production deploy found: not deployed yet, or merged through another PR's merge commit (a stacked PR), which git history cannot link.",
     "deploy_count": "Number of distinct production deploys carrying this group's PRs.",
     "deploys_per_week": "deploy_count divided by the number of weeks in [--since, --until].",
     "change_failure_rate": "Share of this group's deploys where a shipped PR was later reverted or blamed for a follow-up fix (0-1).",
@@ -94,7 +94,7 @@ SPEED_ROWS = [
 PRODUCTION_ROWS = [
     ("lead_time_to_prod_h_median", "Lead time to production, h (median)"),
     ("lead_time_to_prod_h_p75", "Lead time to production, h (p75)"),
-    ("not_deployed_count", "Not yet deployed"),
+    ("no_deploy_found_count", "No deploy found"),
     ("deploy_count", "Deploy count"),
     ("deploys_per_week", "Deploys / week"),
     ("change_failure_rate", "Change failure rate"),
