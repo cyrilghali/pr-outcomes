@@ -197,6 +197,7 @@ Examples:
   pr-outcomes tryriot/parrot --since 2026-08-01 --until 2026-09-18
   pr-outcomes tryriot/parrot --group-by depth --repo-path ~/dev/riot/parrot
   pr-outcomes tryriot/parrot --group-by team --teams awareness,inbox,platform,simulation,sonar
+  pr-outcomes tryriot/parrot --team sonar --group-by author
   pr-outcomes tryriot/parrot --prs | jq '.prs[] | select(.number == 1234)'
   pr-outcomes tryriot/parrot --since 2026-08-01 --until 2026-09-18 --format table
 
@@ -227,7 +228,13 @@ def parse_args(argv=None):
     p.add_argument(
         "--teams", default=None,
         help="Comma-separated org team slugs to restrict --group-by team to, "
-             "e.g. awareness,inbox,platform,simulation,sonar. Default: every team the author belongs to.",
+             "e.g. awareness,inbox,platform,simulation,sonar. Default: every team the author belongs to. "
+             "Only applies with --group-by team.",
+    )
+    p.add_argument(
+        "--team", default=None,
+        help="Keep only PRs authored by a member of this GitHub org team slug, e.g. sonar. "
+             "Combine with any --group-by. Default: none.",
     )
     p.add_argument(
         "--fix-window-days", type=int, default=7,
@@ -323,11 +330,12 @@ def main(argv=None) -> int:
     reportable = metrics.in_report_window(all_prs, since, until)
 
     teams_by_login, selected_teams = None, None
-    if args.group_by == "team":
-        _warn(
-            "--group-by team uses today's GitHub org membership, not membership at PR merge time",
-            warnings,
-        )
+    if args.group_by == "team" or args.team:
+        if args.group_by == "team":
+            _warn(
+                "--group-by team uses today's GitHub org membership, not membership at PR merge time",
+                warnings,
+            )
         try:
             teams_by_login, team_warnings = fetch.fetch_org_teams(owner, name, refresh=args.refresh)
         except fetch.GhError as e:
@@ -337,8 +345,22 @@ def main(argv=None) -> int:
         for w in team_warnings:
             print(f"pr-outcomes: {w}", file=sys.stderr)
         warnings.extend(team_warnings)
-        if args.teams:
+        if args.group_by == "team" and args.teams:
             selected_teams = {t.strip() for t in args.teams.split(",") if t.strip()}
+
+    if args.teams and args.group_by != "team":
+        _warn("--teams only applies with --group-by team; ignored", warnings)
+
+    if args.team:
+        valid_slugs = {slug for slugs in teams_by_login.values() for slug in slugs}
+        if args.team not in valid_slugs:
+            print(
+                f"pr-outcomes: unknown team '{args.team}'; "
+                f"valid teams: {', '.join(sorted(valid_slugs)) or '(none found)'}",
+                file=sys.stderr,
+            )
+            return 2
+        reportable = metrics.filter_by_team(reportable, teams_by_login, args.team)
 
     groups_prs = metrics.group_prs(reportable, facts, args.group_by, teams_by_login, selected_teams)
     groups = {
@@ -351,6 +373,7 @@ def main(argv=None) -> int:
         payload = {
             "repo": args.repo,
             "base": base,
+            **({"team": args.team} if args.team else {}),
             "since": since.isoformat(),
             "until": until.isoformat(),
             "generated_at": datetime.now(timezone.utc).isoformat(),

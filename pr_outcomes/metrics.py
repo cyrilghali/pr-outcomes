@@ -216,6 +216,12 @@ def _first_event_time(pr: PR, predicate):
     return e.at if e else None
 
 
+def filter_by_team(prs: list[PR], teams_by_login: dict[str, set[str]], team: str) -> list[PR]:
+    """Keep only PRs whose author is a member of the given GitHub org team
+    slug, per the --group-by team membership map."""
+    return [pr for pr in prs if team in teams_by_login.get(pr.author.login, set())]
+
+
 # --- Grouping -----------------------------------------------------------
 
 def in_report_window(prs: list[PR], since: date, until: date) -> list[PR]:

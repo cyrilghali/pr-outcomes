@@ -1,10 +1,30 @@
 import argparse
 import io
+import json
+import os
 import unittest
 from datetime import date
 from unittest import mock
 
 from pr_outcomes import cli
+from pr_outcomes.fetch import normalise_pr
+
+FIXTURES = os.path.join(os.path.dirname(__file__), "fixtures", "prs.json")
+with open(FIXTURES) as f:
+    _RAW = json.load(f)
+
+
+def _run_main(argv, prs, teams_by_login=None):
+    """Run cli.main() with GitHub/git I/O mocked out; returns (exit_code,
+    stdout). teams_by_login, when given, backs fetch.fetch_org_teams."""
+    fake_stdout = io.StringIO()
+    fake_stdout.isatty = lambda: False
+    with mock.patch.object(cli.fetch, "get_default_branch", return_value="main"), \
+         mock.patch.object(cli.fetch, "fetch_prs", return_value=(prs, [])), \
+         mock.patch.object(cli.fetch, "fetch_org_teams", return_value=(teams_by_login or {}, [])), \
+         mock.patch.object(cli.sys, "stdout", fake_stdout):
+        code = cli.main(argv)
+    return code, fake_stdout.getvalue()
 
 
 class ResolveFormatTests(unittest.TestCase):
@@ -85,6 +105,37 @@ class DateValidatorTests(unittest.TestCase):
         with self.assertRaises(argparse.ArgumentTypeError) as ctx:
             cli.parse_date("08/01/2026")
         self.assertIn("2026-08-01", str(ctx.exception))
+
+
+class TeamFilterTests(unittest.TestCase):
+    ARGV = ["o/r", "--since", "2026-01-01", "--until", "2026-01-31", "--format", "json"]
+
+    def test_unknown_team_slug_exits_2_and_lists_valid_ones(self):
+        pr = normalise_pr(_RAW["rounds_two"])  # author: alice
+        code, out = _run_main(
+            self.ARGV + ["--team", "nope"], [pr], teams_by_login={"alice": {"sonar"}},
+        )
+        self.assertEqual(code, 2)
+
+    def test_known_team_filters_to_its_members(self):
+        alice_pr, bob_pr = normalise_pr(_RAW["rounds_two"]), normalise_pr(_RAW["revert_pr"])
+        code, out = _run_main(
+            self.ARGV + ["--team", "sonar", "--group-by", "author"],
+            [alice_pr, bob_pr],
+            teams_by_login={"alice": {"sonar"}, "bob": {"platform"}},
+        )
+        self.assertEqual(code, 0)
+        payload = json.loads(out)
+        self.assertEqual(payload["team"], "sonar")
+        self.assertIn("alice", payload["groups"])
+        self.assertNotIn("bob", payload["groups"])
+
+    def test_teams_without_group_by_team_warns(self):
+        pr = normalise_pr(_RAW["rounds_two"])
+        code, out = _run_main(self.ARGV + ["--teams", "sonar"], [pr])
+        self.assertEqual(code, 0)
+        payload = json.loads(out)
+        self.assertTrue(any("--teams only applies" in w for w in payload["warnings"]))
 
 
 class GhErrorHintTests(unittest.TestCase):

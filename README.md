@@ -45,12 +45,13 @@ pr-outcomes tryriot/parrot --since 2026-08-01
 pr-outcomes tryriot/parrot --since 2026-08-01 --group-by reviewed
 pr-outcomes tryriot/parrot --group-by depth --repo-path ~/dev/riot/parrot
 pr-outcomes tryriot/parrot --group-by team --teams awareness,inbox,platform,simulation,sonar
+pr-outcomes tryriot/parrot --team sonar --group-by author
 pr-outcomes tryriot/parrot --prs | jq '.prs[] | select(.number == 1234)'
 ```
 
 ```
 pr-outcomes OWNER/REPO [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--base BRANCH]
-            [--group-by reviewed|label|author|approver|depth|team] [--teams SLUG,...]
+            [--group-by reviewed|label|author|approver|depth|team] [--teams SLUG,...] [--team SLUG]
             [--fix-window-days 7] [--repo-path PATH]
             [--format table|json] [--json] [--prs] [--refresh] [--verbose]
 ```
@@ -63,7 +64,8 @@ Run `pr-outcomes --help` for every flag's default and an `Examples:` block.
 | `--until` | today | |
 | `--base` | repo's default branch | On `tryriot/parrot` this is `staging`, so the "Deploy to production" PRs based on `production` are excluded. |
 | `--group-by` | none (one "all" group) | `reviewed`, `label`, `author`, `approver`, `depth`, or `team`. Label, approver, and team groups can overlap: a PR with two labels, or an author on two teams, counts in both. A PR with none lands in a `(none)` group. |
-| `--teams` | every team the author belongs to | Comma-separated GitHub org team slugs, only used with `--group-by team`, e.g. `awareness,inbox,platform,simulation,sonar`. |
+| `--teams` | every team the author belongs to | Comma-separated GitHub org team slugs, only used with `--group-by team`, e.g. `awareness,inbox,platform,simulation,sonar`. Given without `--group-by team`, it's ignored with a warning. |
+| `--team` | none | Keep only PRs authored by a member of this single GitHub org team slug, e.g. `sonar`. Combines with any `--group-by` (`--team sonar --group-by author`). Reuses the same cached membership as `--group-by team`. An unknown slug exits 2 and lists the valid ones. |
 | `--fix-window-days` | 7 | How many days past `--until` to look for reverts and follow-up fixes. PRs merged in the last `--fix-window-days` days before `--until` have a truncated real window, since the fetch range is capped at today: for a baseline measurement, pick an `--until` at least that far in the past. |
 | `--repo-path` | none | Local clone to blame-attribute follow-up fixes against (see below). Only local git commands are run; the clone is never fetched or written to. Without it, follow-up-fix metrics are null (`-` in the table, `null` in JSON). |
 | `--format` | `json` when piped, `table` when a TTY | `--json` is a shorthand for `--format json`. |

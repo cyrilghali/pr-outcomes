@@ -266,6 +266,21 @@ class TeamGroupTests(unittest.TestCase):
         self.assertEqual({p.number for p in groups["(none)"]}, {alice_pr.number})
 
 
+class FilterByTeamTests(unittest.TestCase):
+    def test_keeps_only_members_of_the_given_team(self):
+        alice_pr, bob_pr = pr("rounds_two"), pr("revert_pr")
+        teams_by_login = {"alice": {"sonar", "platform"}, "bob": {"platform"}}
+
+        filtered = metrics.filter_by_team([alice_pr, bob_pr], teams_by_login, "sonar")
+
+        self.assertEqual([p.number for p in filtered], [alice_pr.number])
+
+    def test_author_with_no_membership_is_dropped(self):
+        alice_pr = pr("rounds_two")
+        filtered = metrics.filter_by_team([alice_pr], {}, "sonar")
+        self.assertEqual(filtered, [])
+
+
 class DepthGroupTests(unittest.TestCase):
     def test_groups_by_review_depth(self):
         prs = [pr("approval_substantive"), pr("approval_rubber_stamp"), pr("no_review")]
