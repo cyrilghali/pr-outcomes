@@ -1,9 +1,12 @@
 #!/bin/bash
 # Weekly tryriot/parrot report: overall plus team, author and size breakdowns, as tables.
+# Launched hourly and at login, so a Mac that was off on Monday still gets its report;
+# the done marker keeps it to one report per ISO week.
 # Waits out GitHub's hourly GraphQL limit instead of failing; finished weeks stay cached.
-set -u
+set -eu
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/bin:/bin"
-out="$HOME/dev/cyrilghali/pr-outcomes/reports/$(date +%F)"
+out="$HOME/dev/cyrilghali/pr-outcomes/reports/$(date +%G-W%V)"
+[ -e "$out/done" ] && exit 0
 mkdir -p "$out"
 run() {
   until pr-outcomes tryriot/parrot --repo-path "$HOME/dev/riot/parrot" --format table "$@"; do
@@ -13,3 +16,4 @@ run() {
 }
 run > "$out/all.txt" 2> "$out/errors.txt"
 for g in team author size; do run --group-by "$g" > "$out/$g.txt" 2>> "$out/errors.txt"; done
+touch "$out/done"
