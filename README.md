@@ -62,10 +62,10 @@ Run `pr-outcomes --help` for every flag's default and an `Examples:` block.
 
 | Flag | Default | Notes |
 |---|---|---|
-| `--since` | 90 days ago | |
+| `--since` | 90 days before `--until` | |
 | `--until` | today | |
 | `--base` | repo's default branch | On `tryriot/parrot` this is `staging`, so the "Deploy to production" PRs based on `production` are excluded. |
-| `--group-by` | none (one "all" group) | `reviewed`, `label`, `author`, `approver`, `depth`, `team`, `size`, `week`, or `month`. Label, approver, and team groups can overlap: a PR with two labels, or an author on two teams, counts in both. A PR with none lands in a `(none)` group. `size` buckets additions+deletions: `xs` (<100), `s` (100-299), `m` (300-699), `l` (700+), always shown in that order. `week`/`month` bucket by the merge date's ISO week (`2026-W32`) or calendar month (`2026-08`), always shown chronologically; combine with `--team` for one team's trend over time. |
+| `--group-by` | none (one "all" group) | `reviewed`, `label`, `author`, `approver`, `depth`, `team`, `size`, `week`, or `month`. Label, approver, and team groups can overlap: a PR with two labels, or an author on two teams, counts in both. A PR with none lands in a `(none)` group. `size` buckets additions+deletions: `xs` (<100), `s` (100-299), `m` (300-699), `l` (700+), always shown in that order. `week`/`month` bucket by the merge date's ISO week (`2026-W32`) or calendar month (`2026-08`), always shown chronologically, including a period with zero PRs (count 0, other metrics null) so a quiet period doesn't vanish from a trend; combine with `--team` for one team's trend over time. |
 | `--teams` | every team the author belongs to | Comma-separated GitHub org team slugs, only used with `--group-by team`, e.g. `awareness,inbox,platform,simulation,sonar`. Given without `--group-by team`, it's ignored with a warning. |
 | `--team` | none | Keep only PRs authored by a member of this single GitHub org team slug, e.g. `sonar`. Combines with any `--group-by` (`--team sonar --group-by author`). Reuses the same cached membership as `--group-by team`. An unknown slug exits 2 and lists the valid ones. |
 | `--fix-window-days` | 7 | How many days past `--until` to look for reverts and follow-up fixes. PRs merged in the last `--fix-window-days` days before `--until` have a truncated real window, since the fetch range is capped at today: for a baseline measurement, pick an `--until` at least that far in the past. |

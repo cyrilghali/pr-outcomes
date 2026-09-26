@@ -180,5 +180,47 @@ class ComputeFollowupFixesEndToEndTests(unittest.TestCase):
             self.assertNotIn(fix_number, introducing)
 
 
+class NonUtf8GitOutputTests(unittest.TestCase):
+    """A file with non-UTF-8 bytes (e.g. Latin-1) must not crash git diff or
+    git blame parsing; _run_git replaces undecodable bytes instead of
+    raising UnicodeDecodeError."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.repo = self.tmp.name
+        subprocess.run(["git", "init", "-q", "-b", "staging", self.repo], check=True)
+
+    def _commit(self, subject: str, day: int, path: str, content: bytes) -> str:
+        full = os.path.join(self.repo, path)
+        with open(full, "wb") as f:
+            f.write(content)
+        subprocess.run(["git", "-C", self.repo, "add", "-A"], check=True)
+        date = (datetime(2026, 1, 1, tzinfo=timezone.utc) + timedelta(days=day)).isoformat()
+        env = {
+            **os.environ,
+            "GIT_AUTHOR_NAME": "Test", "GIT_AUTHOR_EMAIL": "test@example.com",
+            "GIT_COMMITTER_NAME": "Test", "GIT_COMMITTER_EMAIL": "test@example.com",
+            "GIT_AUTHOR_DATE": date, "GIT_COMMITTER_DATE": date,
+        }
+        subprocess.run(["git", "-C", self.repo, "commit", "-q", "-m", subject], check=True, env=env)
+        return subprocess.run(
+            ["git", "-C", self.repo, "rev-parse", "HEAD"], check=True, capture_output=True, text=True,
+        ).stdout.strip()
+
+    def test_diff_and_blame_survive_a_latin1_file(self):
+        # é encoded as Latin-1 (0xe9) is not valid UTF-8 on its own.
+        self._commit("init", 0, "notes.txt", "line one\nline tw\xe9\nline three\n".encode("latin-1"))
+        self._commit("fix: x (#2)", 1, "notes.txt", "line one\nline tw\xe9-v2\nline three\n".encode("latin-1"))
+        subprocess.run(
+            ["git", "update-ref", "refs/remotes/origin/staging", "refs/heads/staging"],
+            cwd=self.repo, check=True,
+        )
+        diff = blame._run_git(self.repo, ["diff", "-U0", "HEAD~1", "HEAD"])
+        self.assertIn("notes.txt", diff)
+        blamed = blame._run_git(self.repo, ["blame", "--line-porcelain", "-L", "2,2", "HEAD~1", "--", "notes.txt"])
+        self.assertRegex(blamed, r"^[0-9a-f]{40} ")
+
+
 if __name__ == "__main__":
     unittest.main()

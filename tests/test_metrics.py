@@ -36,7 +36,7 @@ class ReviewRoundsTests(unittest.TestCase):
 
 class ApprovalClassTests(unittest.TestCase):
     def test_changed_by_review(self):
-        classes = metrics.compute_approval_classes(pr("approval_substantive"))
+        classes = metrics.compute_approval_classes(pr("approval_changed_by_review"))
         self.assertEqual(classes["carol"], "changed_by_review")
 
     def test_commented(self):
@@ -71,7 +71,7 @@ class ApprovalClassTests(unittest.TestCase):
     def test_commented_when_push_only_after_approval(self):
         # comment+approve back to back, then a rebase before merge: the push
         # never sat between the comment and the approval, so this is not
-        # substantive even though a push happened somewhere in the PR.
+        # changed_by_review even though a push happened somewhere in the PR.
         classes = metrics.compute_approval_classes(pr("approval_commented_then_rebase"))
         self.assertEqual(classes["heidi"], "commented")
 
@@ -309,6 +309,41 @@ class PeriodGroupTests(unittest.TestCase):
         # come out chronological, not insertion-ordered.
         self.assertEqual(list(groups.keys()), ["2026-01", "2026-04"])
 
+    def test_empty_period_between_since_and_until_still_appears(self):
+        # Only January and April have PRs, but --since/--until span
+        # January-April: February and March must still show up, at count 0,
+        # so a quiet month doesn't vanish from a trend.
+        later = pr("merged_30h")  # 2026-04
+        earlier = pr("rounds_two")  # 2026-01
+        facts = {
+            later.number: metrics.compute_all_facts([later], fix_window_days=7)[later.number],
+            earlier.number: metrics.compute_all_facts([earlier], fix_window_days=7)[earlier.number],
+        }
+        since, until = date(2026, 1, 1), date(2026, 4, 30)
+        groups = metrics.group_prs([later, earlier], facts, "month", since=since, until=until)
+        self.assertEqual(list(groups.keys()), ["2026-01", "2026-02", "2026-03", "2026-04"])
+        self.assertEqual(groups["2026-02"], [])
+        self.assertEqual(groups["2026-03"], [])
+
+        out = metrics.aggregate_group(groups["2026-02"], facts, *metrics.group_window("2026-02", "month", since, until))
+        self.assertEqual(out["count"], 0)
+        self.assertIsNone(out["revert_rate"])
+        self.assertIsNone(out["time_to_merge_h_median"])
+
+    def test_period_labels_between_covers_weeks_spanning_a_partial_range(self):
+        labels = metrics.period_labels_between(date(2026, 8, 5), date(2026, 8, 20), "week")
+        self.assertEqual(labels, ["2026-W32", "2026-W33", "2026-W34"])
+
+    def test_week_label_is_zero_padded_so_string_sort_matches_chronological(self):
+        # Week 9 must read "W09", not "W9" -- otherwise "2026-W10" sorts
+        # before "2026-W9" as plain strings, breaking the chronological
+        # ordering group_prs relies on.
+        w9 = metrics.period_key(date(2026, 2, 23), "week")  # ISO week 9
+        w10 = metrics.period_key(date(2026, 3, 2), "week")  # ISO week 10
+        self.assertEqual(w9, "2026-W09")
+        self.assertEqual(w10, "2026-W10")
+        self.assertLess(w9, w10)
+
 
 class SizeGroupTests(unittest.TestCase):
     def test_buckets_by_additions_plus_deletions(self):
@@ -342,7 +377,7 @@ class SizeGroupTests(unittest.TestCase):
 
 class DepthGroupTests(unittest.TestCase):
     def test_groups_by_review_depth(self):
-        prs = [pr("approval_substantive"), pr("approval_rubber_stamp"), pr("no_review")]
+        prs = [pr("approval_changed_by_review"), pr("approval_rubber_stamp"), pr("no_review")]
         facts = {p.number: metrics.PRFacts(
             number=p.number,
             time_to_first_human_review_h=None, time_to_first_bot_review_h=None,
@@ -351,13 +386,9 @@ class DepthGroupTests(unittest.TestCase):
             size=0, changed_files=0, reviewed_group="", approval_classes=metrics.compute_approval_classes(p),
         ) for p in prs}
         groups = metrics.group_prs(prs, facts, "depth")
-        self.assertEqual({n.number for n in groups["changed-by-review"]}, {pr("approval_substantive").number})
+        self.assertEqual({n.number for n in groups["changed-by-review"]}, {pr("approval_changed_by_review").number})
         self.assertEqual({n.number for n in groups["light-review"]}, {pr("approval_rubber_stamp").number})
         self.assertEqual({n.number for n in groups["no-human-approval"]}, {pr("no_review").number})
-
-
-if __name__ == "__main__":
-    unittest.main()
 
 
 class GroupWindowTests(unittest.TestCase):
@@ -370,3 +401,7 @@ class GroupWindowTests(unittest.TestCase):
     def test_non_period_group_uses_the_whole_window(self):
         since, until = date(2026, 6, 10), date(2026, 9, 18)
         self.assertEqual(metrics.group_window("sonar", "team", since, until), (since, until))
+
+
+if __name__ == "__main__":
+    unittest.main()

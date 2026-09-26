@@ -8,7 +8,7 @@ import re
 from calendar import monthrange
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
 
 from pr_outcomes.fetch import PR
 
@@ -238,6 +238,26 @@ def period_bounds(label: str, group_by: str) -> tuple[date, date]:
     return date(year, month, 1), date(year, month, monthrange(year, month)[1])
 
 
+def period_labels_between(since: date, until: date, group_by: str) -> list[str]:
+    """Every week/month label whose period overlaps [since, until], in
+    chronological order -- so a trend keeps a quiet period at count 0
+    instead of it vanishing from the output."""
+    labels = []
+    if group_by == "week":
+        cur = since
+        while cur <= until:
+            labels.append(period_key(cur, "week"))
+            cur += timedelta(days=7)
+    else:
+        year, month = since.year, since.month
+        while (year, month) <= (until.year, until.month):
+            labels.append(f"{year:04d}-{month:02d}")
+            month += 1
+            if month > 12:
+                month, year = 1, year + 1
+    return labels
+
+
 def group_window(label: str, group_by: str | None, since: date, until: date) -> tuple[date, date]:
     """The date range a group's throughput is measured over: a period group
     covers its own period clipped to the report window, other groups the
@@ -276,6 +296,7 @@ def in_report_window(prs: list[PR], since: date, until: date) -> list[PR]:
 def group_prs(
     prs: list[PR], facts: dict, group_by: str | None,
     teams_by_login: dict[str, set[str]] | None = None, selected_teams: set[str] | None = None,
+    since: date | None = None, until: date | None = None,
 ) -> dict:
     groups: dict[str, list[PR]] = defaultdict(list)
     if group_by is None:
@@ -330,6 +351,9 @@ def group_prs(
         for pr in prs:
             if pr.merged:
                 groups[period_key(pr.merged.date(), group_by)].append(pr)
+        if since is not None and until is not None:
+            for label in period_labels_between(since, until, group_by):
+                groups.setdefault(label, [])  # keep a quiet period, at count 0, in the trend
         return {k: groups[k] for k in sorted(groups)}  # chronological, not insertion order
     else:
         raise ValueError(f"unknown group-by: {group_by}")

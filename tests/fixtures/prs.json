@@ -129,7 +129,7 @@
       ]
     }
   },
-  "approval_substantive": {
+  "approval_changed_by_review": {
     "number": 200,
     "title": "Refactor billing",
     "body": "",

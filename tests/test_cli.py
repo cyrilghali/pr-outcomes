@@ -81,6 +81,10 @@ class ResolveSinceUntilTests(unittest.TestCase):
         since, until = cli.resolve_since_until(None, None, date(2026, 9, 26))
         self.assertEqual(since, date(2026, 6, 28))
 
+    def test_since_equal_until_is_accepted(self):
+        since, until = cli.resolve_since_until(date(2026, 9, 18), date(2026, 9, 18), date(2026, 9, 26))
+        self.assertEqual(since, until)
+
     def test_since_after_until_raises_with_corrected_example(self):
         with self.assertRaises(ValueError) as ctx:
             cli.resolve_since_until(date(2026, 9, 20), date(2026, 9, 1), date(2026, 9, 26))
@@ -246,7 +250,30 @@ class PeriodGroupWarningTests(unittest.TestCase):
             [apr_pr, jan_pr],
         )
         payload = json.loads(out)
-        self.assertEqual(list(payload["groups"].keys()), ["2026-01", "2026-04"])
+        # February and March are empty but still present (count 0), between
+        # the two months that actually have PRs.
+        self.assertEqual(
+            list(payload["groups"].keys()), ["2026-01", "2026-02", "2026-03", "2026-04"],
+        )
+        self.assertEqual(payload["groups"]["2026-02"]["count"], 0)
+
+
+class GroupByWeekThroughputEndToEndTests(unittest.TestCase):
+    def test_period_throughput_uses_the_periods_own_window_not_the_full_range(self):
+        # rounds_two merges 2026-01-01, in ISO week 2026-W01. Clipped to
+        # [--since, --until] that week is Jan 1 - Jan 4 (4/7 of a week), not
+        # the full 31-day since..until range: 1 PR over 4/7 week is
+        # 1.75/week, not ~0.23/week over the whole month. Exercises the
+        # whole cli.main path (fetch, repo resolution) so a change that
+        # aggregates every group over the same (since, until) instead of
+        # each period's own window fails this.
+        pr = normalise_pr(_RAW["rounds_two"])
+        _, out = _run_main(
+            ["o/r", "--since", "2026-01-01", "--until", "2026-01-31", "--format", "json", "--group-by", "week"],
+            [pr],
+        )
+        payload = json.loads(out)
+        self.assertEqual(payload["groups"]["2026-W01"]["throughput_per_week"], 1.75)
 
 
 class GhErrorHintTests(unittest.TestCase):

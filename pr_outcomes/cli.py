@@ -312,9 +312,49 @@ def main(argv=None) -> int:
         # repo/owner fails here with the not-found hint instead of silently
         # returning zero PRs from the (never-run) search below.
         default_branch = fetch.get_default_branch(owner, name)
-        base = args.base or default_branch
-        if args.verbose or sys.stderr.isatty():
-            print(f"pr-outcomes: base={base} since={since} until={until}", file=sys.stderr)
+    except fetch.GhError as e:
+        print(f"pr-outcomes: gh error: {e}", file=sys.stderr)
+        print(f"pr-outcomes: hint: {gh_error_hint(str(e))}", file=sys.stderr)
+        return 1
+    base = args.base or default_branch
+    if args.verbose or sys.stderr.isatty():
+        print(f"pr-outcomes: base={base} since={since} until={until}", file=sys.stderr)
+
+    teams_by_login, selected_teams = None, None
+    if args.group_by == "team" or args.team:
+        if args.group_by == "team":
+            _warn(
+                "--group-by team uses today's GitHub org membership, not membership at PR merge time",
+                warnings,
+            )
+        try:
+            teams_by_login, team_warnings = fetch.fetch_org_teams(owner, name, refresh=args.refresh)
+        except fetch.GhError as e:
+            print(f"pr-outcomes: gh error: {e}", file=sys.stderr)
+            print(f"pr-outcomes: hint: {gh_error_hint(str(e))}", file=sys.stderr)
+            return 1
+        for w in team_warnings:
+            print(f"pr-outcomes: {w}", file=sys.stderr)
+        warnings.extend(team_warnings)
+        if args.group_by == "team" and args.teams:
+            selected_teams = {t.strip() for t in args.teams.split(",") if t.strip()}
+
+    if args.teams and args.group_by != "team":
+        _warn("--teams only applies with --group-by team; ignored", warnings)
+
+    # Validate --team right after membership loads, before the (potentially
+    # 20-minute) PR fetch below, so an unknown slug fails fast.
+    if args.team:
+        valid_slugs = {slug for slugs in teams_by_login.values() for slug in slugs}
+        if args.team not in valid_slugs:
+            print(
+                f"pr-outcomes: unknown team '{args.team}'; "
+                f"valid teams: {', '.join(sorted(valid_slugs)) or '(none found)'}",
+                file=sys.stderr,
+            )
+            return 2
+
+    try:
         all_prs, fetch_warnings = fetch.fetch_prs(
             owner, name, base, since, until, args.fix_window_days, refresh=args.refresh, verbose=args.verbose,
         )
@@ -343,40 +383,10 @@ def main(argv=None) -> int:
     facts = metrics.compute_all_facts(all_prs, args.fix_window_days, followup_map)
     reportable = metrics.in_report_window(all_prs, since, until)
 
-    teams_by_login, selected_teams = None, None
-    if args.group_by == "team" or args.team:
-        if args.group_by == "team":
-            _warn(
-                "--group-by team uses today's GitHub org membership, not membership at PR merge time",
-                warnings,
-            )
-        try:
-            teams_by_login, team_warnings = fetch.fetch_org_teams(owner, name, refresh=args.refresh)
-        except fetch.GhError as e:
-            print(f"pr-outcomes: gh error: {e}", file=sys.stderr)
-            print(f"pr-outcomes: hint: {gh_error_hint(str(e))}", file=sys.stderr)
-            return 1
-        for w in team_warnings:
-            print(f"pr-outcomes: {w}", file=sys.stderr)
-        warnings.extend(team_warnings)
-        if args.group_by == "team" and args.teams:
-            selected_teams = {t.strip() for t in args.teams.split(",") if t.strip()}
-
-    if args.teams and args.group_by != "team":
-        _warn("--teams only applies with --group-by team; ignored", warnings)
-
     if args.team:
-        valid_slugs = {slug for slugs in teams_by_login.values() for slug in slugs}
-        if args.team not in valid_slugs:
-            print(
-                f"pr-outcomes: unknown team '{args.team}'; "
-                f"valid teams: {', '.join(sorted(valid_slugs)) or '(none found)'}",
-                file=sys.stderr,
-            )
-            return 2
         reportable = metrics.filter_by_team(reportable, teams_by_login, args.team)
 
-    groups_prs = metrics.group_prs(reportable, facts, args.group_by, teams_by_login, selected_teams)
+    groups_prs = metrics.group_prs(reportable, facts, args.group_by, teams_by_login, selected_teams, since, until)
 
     if args.group_by in ("week", "month"):
         for label in groups_prs:
