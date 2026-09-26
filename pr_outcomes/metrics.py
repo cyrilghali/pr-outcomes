@@ -339,7 +339,7 @@ def aggregate_group(prs: list[PR], facts: dict, since: date, until: date) -> dic
     out["merged_within_1h"] = _share(sum(1 for t in merge_times if t <= 1), len(merge_times))
     out["merged_within_24h"] = _share(sum(1 for t in merge_times if t <= 24), len(merge_times))
 
-    weeks = max((until - since).days / 7, 1 / 7)
+    weeks = max(((until - since).days + 1) / 7, 1 / 7)
     out["throughput_per_week"] = round(len(prs) / weeks, 2)
     week_counts: Counter = Counter()
     for pr in prs:

@@ -1,6 +1,7 @@
 import json
 import os
 import unittest
+from datetime import date
 
 from pr_outcomes.fetch import normalise_pr
 from pr_outcomes import metrics
@@ -102,6 +103,17 @@ class TimeAndAggregateTests(unittest.TestCase):
         med, p75 = metrics._median_p75([])
         self.assertIsNone(med)
         self.assertIsNone(p75)
+
+
+class ThroughputTests(unittest.TestCase):
+    def test_inclusive_last_day_counts_as_a_full_week(self):
+        # since..until spans exactly 7 calendar days (Jan 1 through Jan 7
+        # inclusive): one week, not (7-1)/7 of one.
+        since, until = date(2026, 1, 1), date(2026, 1, 7)
+        prs = [pr("rounds_two")] * 7
+        facts = {pr("rounds_two").number: metrics.compute_all_facts([pr("rounds_two")], 7)[pr("rounds_two").number]}
+        out = metrics.aggregate_group(prs, facts, since, until)
+        self.assertEqual(out["throughput_per_week"], 7.0)
 
 
 class DepthGroupTests(unittest.TestCase):
