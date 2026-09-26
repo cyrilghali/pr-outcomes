@@ -199,7 +199,7 @@ class ReportWindowTests(unittest.TestCase):
         self.assertTrue(facts[330].reverted)
         self.assertEqual(facts[330].reverted_by, [331])
 
-        reportable = [p for p in (original, revert) if p.merged and since <= p.merged.date() <= until]
+        reportable = metrics.in_report_window([original, revert], since, until)
         self.assertEqual([p.number for p in reportable], [330])
 
         groups = metrics.group_prs(reportable, facts, None)

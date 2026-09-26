@@ -217,6 +217,10 @@ def _first_event_time(pr: PR, predicate):
 
 # --- Grouping -----------------------------------------------------------
 
+def in_report_window(prs: list[PR], since: date, until: date) -> list[PR]:
+    return [pr for pr in prs if pr.merged and since <= pr.merged.date() <= until]
+
+
 def group_prs(prs: list[PR], facts: dict, group_by: str | None) -> dict:
     groups: dict[str, list[PR]] = defaultdict(list)
     if group_by is None:

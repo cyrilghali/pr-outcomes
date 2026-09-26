@@ -96,7 +96,7 @@ def _parse_dt(s: str) -> datetime:
 
 
 TRANSIENT_ERROR_MARKERS = (
-    "rate limit", "abuse", "was submitted too quickly", "timeout", "502", "504",
+    "rate limit", "abuse", "was submitted too quickly", "timeout", "http 502", "http 504",
 )
 RETRY_BACKOFF_SECONDS = (2, 4, 8, 16)
 
@@ -342,6 +342,7 @@ def _load_or_fetch_chunk(owner: str, name: str, base: str, frm: date, to: date, 
             return json.load(f)
 
     print(f"pr-outcomes: fetching {owner}/{name} {frm}..{to}", file=sys.stderr)
+    started = time.time()
     nodes = _fetch_chunk_nodes(owner, name, base, frm, to)
 
     os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -350,6 +351,9 @@ def _load_or_fetch_chunk(owner: str, name: str, base: str, frm: date, to: date, 
         with os.fdopen(fd, "w") as f:
             json.dump(nodes, f)
         os.replace(tmp_path, path)
+        # Stamp with the fetch start: _chunk_reusable must not trust PRs
+        # merged between the search and the write.
+        os.utime(path, (started, started))
     except BaseException:
         if os.path.exists(tmp_path):
             os.remove(tmp_path)

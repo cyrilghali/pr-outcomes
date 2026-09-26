@@ -108,8 +108,8 @@ The table also reports two more numbers. A review round is a human
 non-author review or comment, then a push, then another human review or
 comment; we report the mean per PR and the share of PRs with at least one
 round. Human
-and bot comments count review bodies and inline comments alongside plain
-comments, excluding the author's own, and are reported as a mean per PR.
+and bot comments count non-approval review bodies and inline comments
+alongside plain comments, excluding the author's own, and are reported as a mean per PR.
 
 `--group-by depth` splits PRs on these classes: `substantive-review` has at
 least one `substantive` approval, `light-review` has a human approval but

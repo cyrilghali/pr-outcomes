@@ -170,7 +170,7 @@ def main(argv=None) -> int:
         print("pr-outcomes: follow-up fixes need --repo-path", file=sys.stderr)
 
     facts = metrics.compute_all_facts(all_prs, args.fix_window_days, followup_map)
-    reportable = [pr for pr in all_prs if pr.merged and since <= pr.merged.date() <= until]
+    reportable = metrics.in_report_window(all_prs, since, until)
 
     groups_prs = metrics.group_prs(reportable, facts, args.group_by)
     groups = {

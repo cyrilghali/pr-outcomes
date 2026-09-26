@@ -1,8 +1,11 @@
 import os
 import tempfile
+import subprocess
 import unittest
+from unittest import mock
 from datetime import date, datetime, time, timedelta, timezone
 
+from pr_outcomes import fetch
 from pr_outcomes.fetch import _chunk_reusable, _is_transient_gh_error, merge_timeline_into_node
 
 
@@ -76,3 +79,22 @@ class TransientGhErrorTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RunGhGraphqlRetryTests(unittest.TestCase):
+    def _run(self, stderrs):
+        results = [subprocess.CompletedProcess([], 1, "", e) for e in stderrs]
+        with mock.patch.object(fetch.subprocess, "run", side_effect=results) as run, \
+                mock.patch.object(fetch.time, "sleep") as sleep:
+            with self.assertRaises(fetch.GhError):
+                fetch._run_gh_graphql("query{}", {})
+        return run.call_count, [c.args[0] for c in sleep.call_args_list]
+
+    def test_transient_errors_retry_with_backoff_then_fail(self):
+        calls, sleeps = self._run(["gh: Bad Gateway (HTTP 502)"] * 5)
+        self.assertEqual(calls, 5)
+        self.assertEqual(sleeps, [2, 4, 8, 16])
+
+    def test_other_errors_fail_immediately(self):
+        calls, sleeps = self._run(["Could not resolve to a PullRequest with the number of 15023"])
+        self.assertEqual((calls, sleeps), (1, []))
