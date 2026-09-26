@@ -229,6 +229,43 @@ class TimeToMergeFromCreatedTests(unittest.TestCase):
         self.assertAlmostEqual(facts.ready_to_merge_h, 1.0)
 
 
+class TeamGroupTests(unittest.TestCase):
+    def _facts_stub(self, prs):
+        return {p.number: metrics.compute_all_facts([p], fix_window_days=7)[p.number] for p in prs}
+
+    def test_groups_by_author_org_team_membership(self):
+        alice_pr, bob_pr = pr("rounds_two"), pr("revert_pr")
+        facts = self._facts_stub([alice_pr, bob_pr])
+        teams_by_login = {"alice": {"platform", "sonar"}}  # bob: no team membership
+
+        groups = metrics.group_prs([alice_pr, bob_pr], facts, "team", teams_by_login, selected_teams=None)
+
+        self.assertEqual({p.number for p in groups["platform"]}, {alice_pr.number})
+        self.assertEqual({p.number for p in groups["sonar"]}, {alice_pr.number})
+        self.assertEqual({p.number for p in groups["(none)"]}, {bob_pr.number})
+
+    def test_selected_teams_restricts_and_filters_out_unselected(self):
+        alice_pr, bob_pr = pr("rounds_two"), pr("revert_pr")
+        facts = self._facts_stub([alice_pr, bob_pr])
+        teams_by_login = {"alice": {"platform", "backend"}}
+
+        groups = metrics.group_prs(
+            [alice_pr, bob_pr], facts, "team", teams_by_login, selected_teams={"platform"},
+        )
+
+        self.assertEqual({p.number for p in groups["platform"]}, {alice_pr.number})
+        self.assertNotIn("backend", groups)
+        self.assertEqual({p.number for p in groups["(none)"]}, {bob_pr.number})
+
+    def test_no_membership_map_lands_everyone_in_none(self):
+        alice_pr = pr("rounds_two")
+        facts = self._facts_stub([alice_pr])
+
+        groups = metrics.group_prs([alice_pr], facts, "team", teams_by_login=None, selected_teams=None)
+
+        self.assertEqual({p.number for p in groups["(none)"]}, {alice_pr.number})
+
+
 class DepthGroupTests(unittest.TestCase):
     def test_groups_by_review_depth(self):
         prs = [pr("approval_substantive"), pr("approval_rubber_stamp"), pr("no_review")]

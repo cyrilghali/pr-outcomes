@@ -221,7 +221,10 @@ def in_report_window(prs: list[PR], since: date, until: date) -> list[PR]:
     return [pr for pr in prs if pr.merged and since <= pr.merged.date() <= until]
 
 
-def group_prs(prs: list[PR], facts: dict, group_by: str | None) -> dict:
+def group_prs(
+    prs: list[PR], facts: dict, group_by: str | None,
+    teams_by_login: dict[str, set[str]] | None = None, selected_teams: set[str] | None = None,
+) -> dict:
     groups: dict[str, list[PR]] = defaultdict(list)
     if group_by is None:
         groups["all"] = list(prs)
@@ -244,6 +247,17 @@ def group_prs(prs: list[PR], facts: dict, group_by: str | None) -> dict:
             if approvers:
                 for login in approvers:
                     groups[login].append(pr)
+            else:
+                groups["(none)"].append(pr)
+    elif group_by == "team":
+        teams_by_login = teams_by_login or {}
+        for pr in prs:
+            author_teams = teams_by_login.get(pr.author.login, set())
+            if selected_teams is not None:
+                author_teams = author_teams & selected_teams
+            if author_teams:
+                for team in sorted(author_teams):
+                    groups[team].append(pr)
             else:
                 groups["(none)"].append(pr)
     elif group_by == "depth":

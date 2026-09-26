@@ -170,7 +170,7 @@ EPILOG = """\
 Examples:
   pr-outcomes tryriot/parrot --since 2026-08-01 --until 2026-09-18
   pr-outcomes tryriot/parrot --group-by depth --repo-path ~/dev/riot/parrot
-  pr-outcomes tryriot/parrot --group-by team
+  pr-outcomes tryriot/parrot --group-by team --teams awareness,inbox,platform,simulation,sonar
   pr-outcomes tryriot/parrot --prs | jq '.prs[] | select(.number == 1234)'
   pr-outcomes tryriot/parrot --since 2026-08-01 --until 2026-09-18 --format table
 
@@ -194,8 +194,14 @@ def parse_args(argv=None):
     p.add_argument("--until", type=parse_date, help="YYYY-MM-DD. Default: today.")
     p.add_argument("--base", default=None, help="Base branch to filter merged PRs on. Default: the repo's default branch.")
     p.add_argument(
-        "--group-by", choices=["reviewed", "label", "author", "approver", "depth"], default=None,
-        help="How to split PRs into groups. Default: one 'all' group.",
+        "--group-by", choices=["reviewed", "label", "author", "approver", "depth", "team"], default=None,
+        help="How to split PRs into groups. 'team' splits by the author's GitHub org team(s) "
+             "(see --teams). Default: one 'all' group.",
+    )
+    p.add_argument(
+        "--teams", default=None,
+        help="Comma-separated org team slugs to restrict --group-by team to, "
+             "e.g. awareness,inbox,platform,simulation,sonar. Default: every team the author belongs to.",
     )
     p.add_argument(
         "--fix-window-days", type=int, default=7,
@@ -285,7 +291,25 @@ def main(argv=None) -> int:
     facts = metrics.compute_all_facts(all_prs, args.fix_window_days, followup_map)
     reportable = metrics.in_report_window(all_prs, since, until)
 
-    groups_prs = metrics.group_prs(reportable, facts, args.group_by)
+    teams_by_login, selected_teams = None, None
+    if args.group_by == "team":
+        _warn(
+            "--group-by team uses today's GitHub org membership, not membership at PR merge time",
+            warnings,
+        )
+        try:
+            teams_by_login, team_warnings = fetch.fetch_org_teams(owner, name, refresh=args.refresh)
+        except fetch.GhError as e:
+            print(f"pr-outcomes: gh error: {e}", file=sys.stderr)
+            print(f"pr-outcomes: hint: {gh_error_hint(str(e))}", file=sys.stderr)
+            return 1
+        for w in team_warnings:
+            print(f"pr-outcomes: {w}", file=sys.stderr)
+        warnings.extend(team_warnings)
+        if args.teams:
+            selected_teams = {t.strip() for t in args.teams.split(",") if t.strip()}
+
+    groups_prs = metrics.group_prs(reportable, facts, args.group_by, teams_by_login, selected_teams)
     groups = {
         name_: metrics.aggregate_group(prs, facts, since, until)
         for name_, prs in groups_prs.items()

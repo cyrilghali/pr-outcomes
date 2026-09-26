@@ -1,3 +1,4 @@
+import json
 import os
 import tempfile
 import subprocess
@@ -98,3 +99,62 @@ class RunGhGraphqlRetryTests(unittest.TestCase):
     def test_other_errors_fail_immediately(self):
         calls, sleeps = self._run(["Could not resolve to a PullRequest with the number of 15023"])
         self.assertEqual((calls, sleeps), (1, []))
+
+
+class FetchOrgTeamsTests(unittest.TestCase):
+    def _with_cache_root(self, tmp):
+        return mock.patch.object(fetch, "CACHE_ROOT", tmp)
+
+    def test_builds_login_to_teams_map_from_two_teams(self):
+        teams_json = json.dumps([{"slug": "platform"}, {"slug": "sonar"}])
+        platform_members = json.dumps([{"login": "alice"}])
+        sonar_members = json.dumps([{"login": "alice"}, {"login": "bob"}])
+        results = [
+            subprocess.CompletedProcess([], 0, teams_json, ""),
+            subprocess.CompletedProcess([], 0, platform_members, ""),
+            subprocess.CompletedProcess([], 0, sonar_members, ""),
+        ]
+        with tempfile.TemporaryDirectory() as tmp, self._with_cache_root(tmp), \
+                mock.patch.object(fetch.subprocess, "run", side_effect=results):
+            teams_by_login, warnings = fetch.fetch_org_teams("acme", "widgets")
+
+        self.assertEqual(teams_by_login, {"alice": {"platform", "sonar"}, "bob": {"sonar"}})
+        self.assertEqual(warnings, [])
+
+    def test_404_falls_back_to_empty_map_with_warning(self):
+        not_found = subprocess.CompletedProcess([], 1, "", "gh: Not Found (HTTP 404)")
+        with tempfile.TemporaryDirectory() as tmp, self._with_cache_root(tmp), \
+                mock.patch.object(fetch.subprocess, "run", return_value=not_found):
+            teams_by_login, warnings = fetch.fetch_org_teams("someuser", "widgets")
+
+        self.assertEqual(teams_by_login, {})
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("someuser", warnings[0])
+
+    def test_fresh_cache_is_reused_without_calling_gh(self):
+        with tempfile.TemporaryDirectory() as tmp, self._with_cache_root(tmp):
+            path = fetch._teams_cache_path("acme", "widgets")
+            os.makedirs(os.path.dirname(path))
+            with open(path, "w") as f:
+                json.dump({"alice": ["platform"]}, f)
+            with mock.patch.object(fetch.subprocess, "run") as run:
+                teams_by_login, warnings = fetch.fetch_org_teams("acme", "widgets")
+            run.assert_not_called()
+        self.assertEqual(teams_by_login, {"alice": {"platform"}})
+
+    def test_stale_cache_is_refetched(self):
+        teams_json = json.dumps([])
+        with tempfile.TemporaryDirectory() as tmp, self._with_cache_root(tmp):
+            path = fetch._teams_cache_path("acme", "widgets")
+            os.makedirs(os.path.dirname(path))
+            with open(path, "w") as f:
+                json.dump({"alice": ["platform"]}, f)
+            stale = datetime.now(timezone.utc).timestamp() - fetch.TEAMS_CACHE_MAX_AGE_SECONDS - 1
+            os.utime(path, (stale, stale))
+            with mock.patch.object(
+                fetch.subprocess, "run",
+                return_value=subprocess.CompletedProcess([], 0, teams_json, ""),
+            ) as run:
+                teams_by_login, warnings = fetch.fetch_org_teams("acme", "widgets")
+            run.assert_called_once()
+        self.assertEqual(teams_by_login, {})

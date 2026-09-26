@@ -384,3 +384,68 @@ def fetch_prs(
     for frm, to in _week_chunks(since, fetch_until):
         all_nodes.extend(_load_or_fetch_chunk(owner, name, base, frm, to, refresh, warnings, verbose))
     return [normalise_pr(n) for n in all_nodes], warnings
+
+
+TEAMS_CACHE_MAX_AGE_SECONDS = 86400  # membership drifts; refetch daily so --group-by team isn't stale for long
+
+
+def _teams_cache_path(owner: str, name: str) -> str:
+    return os.path.join(CACHE_ROOT, f"{owner}__{name}", "teams.json")
+
+
+def _run_gh_rest_paginate(path: str) -> list[dict]:
+    proc = subprocess.run(["gh", "api", path, "--paginate"], capture_output=True, text=True)
+    if proc.returncode != 0:
+        raise GhError(proc.stderr.strip())
+    if not proc.stdout.strip():
+        return []
+    return json.loads(proc.stdout)
+
+
+def fetch_org_teams(owner: str, name: str, refresh: bool = False) -> tuple[dict[str, set[str]], list[str]]:
+    """login -> set of org team slugs, read-only via `gh api orgs/<owner>/teams`
+    and `.../teams/<slug>/members`. Cached at
+    ~/.cache/pr-outcomes/<owner>__<name>/teams.json, refetched once the cache
+    is older than a day or --refresh is passed. Returns (map, warnings): a
+    404 (owner is a user account, not an org) is not an error -- it returns
+    an empty map with a warning instead of failing the whole run."""
+    warnings: list[str] = []
+    path = _teams_cache_path(owner, name)
+    if not refresh and os.path.exists(path):
+        age = time.time() - os.path.getmtime(path)
+        if age < TEAMS_CACHE_MAX_AGE_SECONDS:
+            with open(path) as f:
+                raw = json.load(f)
+            return {login: set(slugs) for login, slugs in raw.items()}, warnings
+
+    try:
+        teams = _run_gh_rest_paginate(f"orgs/{owner}/teams")
+    except GhError as e:
+        if "404" in str(e) or "not found" in str(e).lower():
+            warnings.append(f"'{owner}' has no organization teams (user account?); --group-by team falls back to (none)")
+            _save_teams_cache(path, {})
+            return {}, warnings
+        raise
+
+    login_to_teams: dict[str, set[str]] = {}
+    for team in teams:
+        slug = team["slug"]
+        members = _run_gh_rest_paginate(f"orgs/{owner}/teams/{slug}/members")
+        for member in members:
+            login_to_teams.setdefault(member["login"], set()).add(slug)
+
+    _save_teams_cache(path, {login: sorted(slugs) for login, slugs in login_to_teams.items()})
+    return login_to_teams, warnings
+
+
+def _save_teams_cache(path: str, data: dict) -> None:
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    fd, tmp_path = tempfile.mkstemp(dir=os.path.dirname(path))
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(data, f)
+        os.replace(tmp_path, path)
+    except BaseException:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+        raise
