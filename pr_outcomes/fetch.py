@@ -26,7 +26,6 @@ query($q:String!,$cursor:String){ search(query:$q,type:ISSUE,first:25,after:$cur
  number title body url createdAt mergedAt baseRefName additions deletions changedFiles
  author{login __typename}
  labels(first:20){nodes{name}}
- files(first:100){totalCount nodes{path}}
  comments(first:50){totalCount nodes{author{login __typename} createdAt}}
  reviews(first:50){totalCount nodes{author{login __typename} state submittedAt body comments{totalCount}}}
  reviewThreads(first:50){totalCount nodes{path comments(first:20){nodes{author{login __typename} createdAt}}}}
@@ -49,7 +48,7 @@ DEFAULT_BRANCH_QUERY = """
 query($owner:String!,$name:String!){ repository(owner:$owner,name:$name){ defaultBranchRef{ name } } }
 """
 
-TRUNCATION_WARNING_KEYS = ("reviews", "comments", "reviewThreads", "files")
+TRUNCATION_WARNING_KEYS = ("reviews", "comments", "reviewThreads")
 
 
 @dataclass(frozen=True)
@@ -83,7 +82,6 @@ class PR:
     deletions: int
     changed_files: int
     labels: list[str] = field(default_factory=list)
-    files: list[str] = field(default_factory=list)
     events: list[Event] = field(default_factory=list)
 
 
@@ -221,7 +219,6 @@ def normalise_pr(node: dict) -> PR:
         deletions=node.get("deletions", 0),
         changed_files=node.get("changedFiles", 0),
         labels=[l["name"] for l in node.get("labels", {}).get("nodes", [])],
-        files=[f["path"] for f in node.get("files", {}).get("nodes", [])],
         events=events,
     )
 
