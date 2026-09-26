@@ -223,6 +223,8 @@ target on one metric in isolation.
 python3 -m unittest discover -s tests
 ```
 
+Static types are checked with `pyright` (via `uvx`) as part of `tests/test_types.py`, so the unittest run above is the single gate for both.
+
 `fetch.py` handles GitHub I/O and JSON normalisation. `metrics.py` is pure
 functions with no I/O, tested against hand-built fixtures in
 `tests/fixtures/`. `cli.py` wires the two together and renders the output.

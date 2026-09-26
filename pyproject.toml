@@ -12,5 +12,12 @@ pr-outcomes = "pr_outcomes.cli:main"
 requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
+[tool.pyright]
+include = ["pr_outcomes", "tests"]
+pythonVersion = "3.12"
+typeCheckingMode = "standard"
+reportMissingParameterType = "error"
+reportMissingTypeArgument = "error"
+
 [tool.setuptools]
 packages = ["pr_outcomes"]
