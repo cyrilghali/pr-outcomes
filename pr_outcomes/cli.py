@@ -43,7 +43,7 @@ def _fmt(value) -> str:
     if value is None:
         return "-"
     if isinstance(value, float):
-        return f"{value:.1%}" if 0 <= value <= 1 and value != int(value) else f"{value:g}"
+        return f"{value:g}"
     return str(value)
 
 
