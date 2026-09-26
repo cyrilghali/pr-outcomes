@@ -182,6 +182,43 @@ class NonexistentRepoTests(unittest.TestCase):
         self.assertEqual(code, 1)
 
 
+class PeriodGroupWarningTests(unittest.TestCase):
+    def test_period_crossing_since_boundary_warns_partial(self):
+        # rounds_two merges 2026-01-01 (Thu), inside ISO week 2026-W01 (Mon
+        # 2025-12-29 - Sun 2026-01-04). --since lands on the merge day
+        # itself, after the week started, so the week is partial.
+        pr = normalise_pr(_RAW["rounds_two"])
+        _, out = _run_main(
+            ["o/r", "--since", "2026-01-01", "--until", "2026-06-01", "--format", "json", "--group-by", "week"],
+            [pr],
+        )
+        payload = json.loads(out)
+        self.assertTrue(any("is partial" in w for w in payload["warnings"]))
+
+    def test_period_near_until_warns_truncated_fix_window(self):
+        # rounds_two's week (2025-12-29 - 2026-01-04) is fully inside
+        # [--since, --until], but its last day is inside the last
+        # --fix-window-days days before --until (2026-01-03).
+        pr = normalise_pr(_RAW["rounds_two"])  # merges 2026-01-01
+        _, out = _run_main(
+            ["o/r", "--since", "2025-12-01", "--until", "2026-01-10", "--fix-window-days", "7",
+             "--format", "json", "--group-by", "week"],
+            [pr],
+        )
+        payload = json.loads(out)
+        self.assertTrue(any("fewer than --fix-window-days" in w for w in payload["warnings"]))
+
+    def test_groups_stay_chronological_in_json(self):
+        jan_pr = normalise_pr(_RAW["rounds_two"])  # 2026-01
+        apr_pr = normalise_pr(_RAW["merged_30h"])  # 2026-04
+        _, out = _run_main(
+            ["o/r", "--since", "2026-01-01", "--until", "2026-04-30", "--format", "json", "--group-by", "month"],
+            [apr_pr, jan_pr],
+        )
+        payload = json.loads(out)
+        self.assertEqual(list(payload["groups"].keys()), ["2026-01", "2026-04"])
+
+
 class GhErrorHintTests(unittest.TestCase):
     def test_auth_problem(self):
         self.assertIn("gh auth status", cli.gh_error_hint("HTTP 401: Bad credentials"))

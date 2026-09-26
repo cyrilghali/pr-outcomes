@@ -281,6 +281,35 @@ class FilterByTeamTests(unittest.TestCase):
         self.assertEqual(filtered, [])
 
 
+class PeriodGroupTests(unittest.TestCase):
+    def test_week_key_and_bounds(self):
+        label = metrics.period_key(date(2026, 8, 5), "week")
+        self.assertEqual(label, "2026-W32")
+        start, end = metrics.period_bounds(label, "week")
+        self.assertEqual((start, end), (date(2026, 8, 3), date(2026, 8, 9)))
+
+    def test_month_key_and_bounds(self):
+        label = metrics.period_key(date(2026, 8, 5), "month")
+        self.assertEqual(label, "2026-08")
+        start, end = metrics.period_bounds(label, "month")
+        self.assertEqual((start, end), (date(2026, 8, 1), date(2026, 8, 31)))
+
+    def test_group_by_month_orders_chronologically_regardless_of_pr_order(self):
+        # rounds_two merges 2026-01-01; build a second PR-like fact by hand
+        # via a later-merged fixture so two different months are exercised
+        # out of chronological order in the input list.
+        later = pr("merged_30h")  # merges well after rounds_two, per fixtures
+        earlier = pr("rounds_two")
+        facts = {
+            later.number: metrics.compute_all_facts([later], fix_window_days=7)[later.number],
+            earlier.number: metrics.compute_all_facts([earlier], fix_window_days=7)[earlier.number],
+        }
+        groups = metrics.group_prs([later, earlier], facts, "month")
+        # later (April) comes first in the input list; the output must still
+        # come out chronological, not insertion-ordered.
+        self.assertEqual(list(groups.keys()), ["2026-01", "2026-04"])
+
+
 class SizeGroupTests(unittest.TestCase):
     def test_buckets_by_additions_plus_deletions(self):
         self.assertEqual(metrics.size_bucket(0), "xs")

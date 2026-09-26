@@ -5,6 +5,7 @@ returns plain data out."""
 from __future__ import annotations
 
 import re
+from calendar import monthrange
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from datetime import date
@@ -216,6 +217,27 @@ def _first_event_time(pr: PR, predicate):
     return e.at if e else None
 
 
+def period_key(d: date, group_by: str) -> str:
+    """ISO-week label ('2026-W32') or calendar-month label ('2026-08') for
+    the merge date d. Both formats sort chronologically as plain strings."""
+    if group_by == "week":
+        iso = d.isocalendar()
+        return f"{iso[0]}-W{iso[1]:02d}"
+    return f"{d.year:04d}-{d.month:02d}"
+
+
+def period_bounds(label: str, group_by: str) -> tuple[date, date]:
+    """(first_day, last_day) covered by a period_key label, for checking
+    whether a period is fully inside a report window."""
+    if group_by == "week":
+        year_s, week_s = label.split("-W")
+        year, week = int(year_s), int(week_s)
+        return date.fromisocalendar(year, week, 1), date.fromisocalendar(year, week, 7)
+    year_s, month_s = label.split("-")
+    year, month = int(year_s), int(month_s)
+    return date(year, month, 1), date(year, month, monthrange(year, month)[1])
+
+
 SIZE_BUCKETS = ("xs", "s", "m", "l")
 
 
@@ -294,6 +316,11 @@ def group_prs(
                 groups["light-review"].append(pr)
             else:
                 groups["no-human-approval"].append(pr)
+    elif group_by in ("week", "month"):
+        for pr in prs:
+            if pr.merged:
+                groups[period_key(pr.merged.date(), group_by)].append(pr)
+        return {k: groups[k] for k in sorted(groups)}  # chronological, not insertion order
     else:
         raise ValueError(f"unknown group-by: {group_by}")
     return dict(groups)

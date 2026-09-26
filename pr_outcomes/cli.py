@@ -199,6 +199,7 @@ Examples:
   pr-outcomes tryriot/parrot --group-by team --teams awareness,inbox,platform,simulation,sonar
   pr-outcomes tryriot/parrot --team sonar --group-by author
   pr-outcomes tryriot/parrot --group-by size
+  pr-outcomes tryriot/parrot --team sonar --group-by week
   pr-outcomes tryriot/parrot --prs | jq '.prs[] | select(.number == 1234)'
   pr-outcomes tryriot/parrot --since 2026-08-01 --until 2026-09-18 --format table
 
@@ -222,10 +223,13 @@ def parse_args(argv=None):
     p.add_argument("--until", type=parse_date, help="YYYY-MM-DD. Default: today.")
     p.add_argument("--base", default=None, help="Base branch to filter merged PRs on. Default: the repo's default branch.")
     p.add_argument(
-        "--group-by", choices=["reviewed", "label", "author", "approver", "depth", "team", "size"], default=None,
+        "--group-by",
+        choices=["reviewed", "label", "author", "approver", "depth", "team", "size", "week", "month"],
+        default=None,
         help="How to split PRs into groups. 'team' splits by the author's GitHub org team(s) "
              "(see --teams). 'size' buckets additions+deletions into xs (<100), s (100-299), "
-             "m (300-699), l (700+). Default: one 'all' group.",
+             "m (300-699), l (700+). 'week'/'month' bucket by ISO week (2026-W32) or calendar "
+             "month (2026-08) of merge, chronologically. Default: one 'all' group.",
     )
     p.add_argument(
         "--teams", default=None,
@@ -373,6 +377,22 @@ def main(argv=None) -> int:
         reportable = metrics.filter_by_team(reportable, teams_by_login, args.team)
 
     groups_prs = metrics.group_prs(reportable, facts, args.group_by, teams_by_login, selected_teams)
+
+    if args.group_by in ("week", "month"):
+        for label in groups_prs:
+            period_start, period_end = metrics.period_bounds(label, args.group_by)
+            if period_start < since or period_end > until:
+                _warn(
+                    f"period {label} is partial: only PRs merged in [{since}, {until}] count",
+                    warnings,
+                )
+            elif period_end > complete_until:
+                _warn(
+                    f"period {label} has fewer than --fix-window-days ({args.fix_window_days}) days "
+                    f"to be reverted or fixed as of today ({today})",
+                    warnings,
+                )
+
     groups = {
         name_: metrics.aggregate_group(prs, facts, since, until)
         for name_, prs in groups_prs.items()
