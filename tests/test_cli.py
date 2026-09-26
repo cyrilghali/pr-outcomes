@@ -7,28 +7,34 @@ from unittest import mock
 from pr_outcomes import cli
 
 
-class FormatDefaultTests(unittest.TestCase):
+class ResolveFormatTests(unittest.TestCase):
     """--format defaults to json when stdout isn't a TTY, table when it is;
-    --json always forces json regardless of --format or the TTY."""
-
-    def _fmt(self, argv, isatty: bool) -> str:
-        args = cli.parse_args(argv)
-        fake_stdout = io.StringIO()
-        fake_stdout.isatty = lambda: isatty
-        with mock.patch.object(cli.sys, "stdout", fake_stdout):
-            return "json" if args.json else (args.format or ("json" if not cli.sys.stdout.isatty() else "table"))
+    --json always forces json regardless of --format or the TTY; --json
+    together with --format table is a usage error."""
 
     def test_defaults_to_json_when_piped(self):
-        self.assertEqual(self._fmt(["o/r"], isatty=False), "json")
+        self.assertEqual(cli.resolve_format(None, False, is_tty=False), "json")
 
     def test_defaults_to_table_when_tty(self):
-        self.assertEqual(self._fmt(["o/r"], isatty=True), "table")
+        self.assertEqual(cli.resolve_format(None, False, is_tty=True), "table")
 
     def test_explicit_format_wins_over_tty(self):
-        self.assertEqual(self._fmt(["o/r", "--format", "table"], isatty=False), "table")
+        self.assertEqual(cli.resolve_format("table", False, is_tty=False), "table")
 
     def test_json_flag_wins_even_when_tty(self):
-        self.assertEqual(self._fmt(["o/r", "--json"], isatty=True), "json")
+        self.assertEqual(cli.resolve_format(None, True, is_tty=True), "json")
+
+    def test_json_and_format_json_is_not_a_conflict(self):
+        self.assertEqual(cli.resolve_format("json", True, is_tty=True), "json")
+
+    def test_json_and_format_table_raises(self):
+        with self.assertRaises(ValueError):
+            cli.resolve_format("table", True, is_tty=True)
+
+    def test_json_and_format_table_exits_2_via_parse_args(self):
+        with self.assertRaises(SystemExit) as ctx:
+            cli.parse_args(["o/r", "--json", "--format", "table"])
+        self.assertEqual(ctx.exception.code, 2)
 
 
 class ResolveSinceUntilTests(unittest.TestCase):

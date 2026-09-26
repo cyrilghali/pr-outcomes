@@ -166,6 +166,18 @@ def parse_date(s: str) -> date:
         raise argparse.ArgumentTypeError(f"date must be YYYY-MM-DD, e.g. 2026-08-01 (got {s!r})")
 
 
+def resolve_format(fmt: str | None, json_flag: bool, is_tty: bool) -> str:
+    """table when stdout is a TTY, json otherwise; --json always forces json;
+    an explicit --format wins over the TTY default. Raises ValueError (caller
+    turns this into a usage error) for the contradictory --json --format
+    table."""
+    if json_flag and fmt == "table":
+        raise ValueError("--json conflicts with --format table -- pass one or the other")
+    if json_flag:
+        return "json"
+    return fmt or ("table" if is_tty else "json")
+
+
 def resolve_since_until(since: date | None, until: date | None, today: date) -> tuple[date, date]:
     """--until defaults to today; --since defaults to 90 days before --until.
     Raises ValueError (caller turns this into a usage error) when an explicit
@@ -240,6 +252,7 @@ def parse_args(argv=None):
     args = p.parse_args(argv)
     try:
         args.since, args.until = resolve_since_until(args.since, args.until, date.today())
+        resolve_format(args.format, args.json, is_tty=False)  # validate only; actual value depends on runtime stdout
     except ValueError as e:
         p.error(str(e))
     return args
@@ -265,7 +278,7 @@ def main(argv=None) -> int:
     args = parse_args(argv)
     today = date.today()
     since, until = args.since, args.until
-    fmt = "json" if args.json else (args.format or ("json" if not sys.stdout.isatty() else "table"))
+    fmt = resolve_format(args.format, args.json, sys.stdout.isatty())
     owner, name = args.repo.split("/", 1)  # parse_repo already validated the OWNER/NAME shape
 
     warnings: list[str] = []
