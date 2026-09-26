@@ -49,13 +49,13 @@ pr-outcomes tryriot/parrot --team sonar --group-by author
 pr-outcomes tryriot/parrot --group-by size
 pr-outcomes tryriot/parrot --team sonar --group-by week
 pr-outcomes tryriot/parrot --prs | jq '.prs[] | select(.number == 1234)'
-pr-outcomes tryriot/parrot --repo-path ~/dev/riot/parrot --production --team sonar --group-by month
+pr-outcomes tryriot/parrot --repo-path ~/dev/riot/parrot --production --sentry tryriot/parrot --team sonar --group-by month
 ```
 
 ```
 pr-outcomes OWNER/REPO [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--base BRANCH]
             [--group-by reviewed|label|author|approver|depth|team|size|week|month] [--teams SLUG,...] [--team SLUG]
-            [--fix-window-days 7] [--repo-path PATH] [--production]
+            [--fix-window-days 7] [--repo-path PATH] [--production] [--sentry ORG/PROJECT]
             [--format table|json] [--json] [--prs] [--refresh] [--verbose]
 ```
 
@@ -72,6 +72,7 @@ Run `pr-outcomes --help` for every flag's default and an `Examples:` block.
 | `--fix-window-days` | 7 | How many days past `--until` to look for reverts and follow-up fixes. PRs merged in the last `--fix-window-days` days before `--until` have a truncated real window, since the fetch range is capped at today: for a baseline measurement, pick an `--until` at least that far in the past. |
 | `--repo-path` | none | Local clone to blame-attribute follow-up fixes against (see below). Only local git commands are run; the clone is never fetched or written to. Without it, follow-up-fix metrics are null (`-` in the table, `null` in JSON). |
 | `--production` | off | Add lead time to production, deploy frequency, and change failure rate from `origin/production` in `--repo-path` and the `deploy-production.yml`/`cd-production.yml` GitHub Actions runs (the workflow was renamed 2026-08-28; both are queried, since GitHub keeps older runs under the old name). Requires `--repo-path`. |
+| `--sentry` | none | `ORG/PROJECT` (e.g. `tryriot/parrot`) to add Sentry new-issue attribution. Requires `--production`. |
 | `--format` | `json` when piped, `table` when a TTY | `--json` is a shorthand for `--format json`. |
 | `--prs` | off | Include per-PR facts (JSON: under `"prs"`; table: a JSON block printed after the table). |
 | `--refresh` | off | Bypass the on-disk PR, blame, and team caches. |
@@ -154,13 +155,14 @@ never GitHub state, so this needs a local clone passed through
 
 ### Production outcomes
 
-With `--production`:
+With `--production` (and optionally `--sentry ORG/PROJECT`):
 
 | Metric | Definition |
 |---|---|
 | Lead time to production | Hours from PR merge to the production deploy that shipped it (median, p75). Null for a PR not yet in a known deploy. |
 | Deploy frequency | `deploy_count` (distinct production deploys carrying this group's PRs) and `deploys_per_week`. |
 | Change failure rate | Share of this group's deploys where a shipped PR was later reverted or blamed for a follow-up fix. |
+| Sentry new issues | `sentry_new_issue_count` (new production issues attributed to this group's PRs) and `sentry_new_issue_pr_share` (share of deployed PRs with at least one), via blame at the deploy that shipped them. |
 
 Limits:
 
@@ -171,6 +173,14 @@ Limits:
   `origin/production` makes recently-deployed PRs look not-deployed.
 - Change failure rate inherits the revert and follow-up-fix detection
   limits above, and counts code remediation, not customer-facing incidents.
+- Sentry attribution is precise but rare: on `tryriot/parrot`,
+  2026-08-01..09-18, 5 of 558 new production issues were attributed (130 had
+  no in-app stack frames), because most new issues fail on lines older than
+  the deploy that shipped them. Every Sentry issue here has priority
+  "high", so "any new issue after a deploy" isn't a useful signal on its
+  own (82% of deploys have one within 4 hours). Time to recover and Datadog
+  regressions aren't built: Sentry issues aren't linked to the commits that
+  fixed them, and Datadog has no deploy markers and keeps ~14 days of data.
 
 ### Review depth
 
@@ -272,4 +282,5 @@ Static types are checked with `pyright` (via `uvx`) as part of `tests/test_types
 functions with no I/O, tested against hand-built fixtures in
 `tests/fixtures/`. `cli.py` wires the two together and renders the output.
 `deploys.py` links `origin/production` merges to their GitHub Actions deploy
-runs and the staging PRs each one shipped.
+runs and the staging PRs each one shipped. `sentry.py` attributes new
+production Sentry issues back to the PR whose blamed line introduced them.

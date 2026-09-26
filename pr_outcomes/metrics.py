@@ -64,6 +64,7 @@ class PRFacts:
     deploy_sha: str | None = None
     deployed_at: datetime | None = None
     lead_time_to_prod_h: float | None = None
+    sentry_new_issues: list[str] | None = None  # None means not computed (no --sentry)
 
 
 def _hours(a: datetime | None, b: datetime | None) -> float | None:
@@ -181,7 +182,7 @@ def compute_reverts(prs: list[PR]) -> dict[int, list[int]]:
 
 def compute_all_facts(
     prs: list[PR], fix_window_days: int, followup_by_fix: dict[int, set[int]] | None = None,
-    deploy_by_pr: dict[int, Deploy] | None = None,
+    deploy_by_pr: dict[int, Deploy] | None = None, sentry_by_pr: dict[int, list[str]] | None = None,
 ) -> dict[int, PRFacts]:
     """Per-PR facts for the whole fetched set (needed because reverts and
     follow-up fixes can land after --until). `followup_by_fix` is the
@@ -189,7 +190,8 @@ def compute_all_facts(
     pass None when --repo-path wasn't given, which leaves followup_fix
     unset (null) on every PR rather than guessing. `deploy_by_pr` maps a PR
     number to the `deploys.Deploy` that shipped it (pass None without
-    --production)."""
+    --production). `sentry_by_pr` maps a PR number to its attributed Sentry
+    shortIds (pass None without --sentry; PRs with none get [])."""
     reverted_by = compute_reverts(prs)
     revert_numbers = {n for pr in prs if is_revert_title(pr.title) for n in [pr.number]}
 
@@ -230,6 +232,7 @@ def compute_all_facts(
             deploy_sha=deploy.sha if deploy else None,
             deployed_at=deploy.deployed_at if deploy else None,
             lead_time_to_prod_h=_hours(pr.merged, deploy.deployed_at) if deploy else None,
+            sentry_new_issues=None if sentry_by_pr is None else sentry_by_pr.get(pr.number, []),
         )
     return facts
 
@@ -418,7 +421,8 @@ def _share(numerator: int, denominator: int) -> float | None:
 
 
 def aggregate_group(
-    prs: list[PR], facts: dict[int, PRFacts], since: date, until: date, production: bool = False,
+    prs: list[PR], facts: dict[int, PRFacts], since: date, until: date,
+    production: bool = False, sentry: bool = False,
 ) -> dict[str, Any]:
     group_facts = [facts[pr.number] for pr in prs]
     non_revert = [f for f in group_facts if not f.is_revert]
@@ -504,5 +508,16 @@ def aggregate_group(
         )
         out["change_failure_rate"] = _share(failed, len(distinct_deploys))
         out["failed_deploy_count"] = failed
+
+    if sentry:
+        # A count, not a sum: the same issue can be attributed to two PRs in
+        # the group (e.g. one blamed line each), and must not be counted twice.
+        distinct_issues = {issue for f in group_facts for issue in (f.sentry_new_issues or [])}
+        out["sentry_new_issue_count"] = len(distinct_issues)
+        deployed_with_sentry = [
+            f for f in group_facts if f.deploy_sha is not None and f.sentry_new_issues is not None
+        ]
+        with_issue = sum(1 for f in deployed_with_sentry if f.sentry_new_issues)
+        out["sentry_new_issue_pr_share"] = _share(with_issue, len(deployed_with_sentry))
 
     return out

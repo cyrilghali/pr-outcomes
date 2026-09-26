@@ -9,7 +9,7 @@ import sys
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
-from pr_outcomes import blame, deploys, fetch, metrics
+from pr_outcomes import blame, deploys, fetch, metrics, sentry
 
 DEFINITIONS = {
     "count": "Number of PRs in this group.",
@@ -54,6 +54,8 @@ DEFINITIONS = {
     "deploys_per_week": "deploy_count divided by the number of weeks in [--since, --until].",
     "change_failure_rate": "Share of this group's deploys where a shipped PR was later reverted or blamed for a follow-up fix (0-1).",
     "failed_deploy_count": "Number of this group's deploys where a shipped PR was later reverted or blamed for a follow-up fix.",
+    "sentry_new_issue_count": "Total new production Sentry issues attributed to this group's PRs; requires --sentry.",
+    "sentry_new_issue_pr_share": "Share of this group's deployed PRs with at least one attributed new Sentry issue (0-1); requires --sentry.",
 }
 
 OUTCOMES_ROWS = [
@@ -97,6 +99,8 @@ PRODUCTION_ROWS = [
     ("deploys_per_week", "Deploys / week"),
     ("change_failure_rate", "Change failure rate"),
     ("failed_deploy_count", "Failed deploy count"),
+    ("sentry_new_issue_count", "Sentry new issues"),
+    ("sentry_new_issue_pr_share", "PRs with a new Sentry issue"),
 ]
 
 
@@ -116,7 +120,7 @@ SHARE_KEYS = {
     "revert_rate", "followup_fix_rate", "approval_share_changed_by_review",
     "approval_share_commented", "approval_share_silent", "approval_share_rubber_stamp",
     "review_rounds_ge1_share", "cubic_scored_share", "cubic_5_share", "cubic_first_5_share",
-    "merged_within_1h", "merged_within_24h", "change_failure_rate",
+    "merged_within_1h", "merged_within_24h", "change_failure_rate", "sentry_new_issue_pr_share",
 }
 
 
@@ -155,7 +159,9 @@ def render_table(groups: dict[str, dict[str, Any]]) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
-def build_pr_json(pr: fetch.PR, fact: metrics.PRFacts, production: bool = False) -> dict[str, Any]:
+def build_pr_json(
+    pr: fetch.PR, fact: metrics.PRFacts, production: bool = False, sentry_flag: bool = False,
+) -> dict[str, Any]:
     data = {
         "number": pr.number,
         "title": pr.title,
@@ -189,6 +195,8 @@ def build_pr_json(pr: fetch.PR, fact: metrics.PRFacts, production: bool = False)
         data["deploy_sha"] = fact.deploy_sha
         data["deployed_at"] = fact.deployed_at.isoformat() if fact.deployed_at else None
         data["lead_time_to_prod_h"] = fact.lead_time_to_prod_h
+    if sentry_flag:
+        data["sentry_new_issues"] = fact.sentry_new_issues
     return data
 
 
@@ -241,7 +249,7 @@ Examples:
   pr-outcomes tryriot/parrot --team sonar --group-by week
   pr-outcomes tryriot/parrot --prs | jq '.prs[] | select(.number == 1234)'
   pr-outcomes tryriot/parrot --since 2026-08-01 --until 2026-09-18 --format table
-  pr-outcomes tryriot/parrot --repo-path ~/dev/riot/parrot --production --team sonar --group-by month
+  pr-outcomes tryriot/parrot --repo-path ~/dev/riot/parrot --production --sentry tryriot/parrot --team sonar --group-by month
 
 Exit codes: 0 ok, 1 GitHub/git error, 2 usage error.
 
@@ -308,6 +316,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
              "GitHub Actions runs (both queried; the workflow was renamed 2026-08-28). "
              "Requires --repo-path. Default: off.",
     )
+    p.add_argument(
+        "--sentry", type=parse_repo, default=None,
+        help="ORG/PROJECT (e.g. tryriot/parrot) to add Sentry new-issue attribution. "
+             "Requires --production. Default: none.",
+    )
     p.add_argument("--refresh", action="store_true", help="Bypass the on-disk PR, blame, and team caches. Default: off.")
     p.add_argument(
         "--verbose", action="store_true",
@@ -321,6 +334,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         p.error(str(e))
     if args.production and not args.repo_path:
         p.error("--production requires --repo-path")
+    if args.sentry and not args.production:
+        p.error("--sentry requires --production")
     return args
 
 
@@ -431,6 +446,7 @@ def main(argv: list[str] | None = None) -> int:
         _warn("follow-up fixes need --repo-path", warnings)
 
     deploy_by_pr: dict[int, deploys.Deploy] | None = None
+    sentry_by_pr: dict[int, list[str]] | None = None
     if args.production:
         try:
             built_deploys, deploy_warnings = deploys.build_deploys(args.repo_path, owner, name, base, since, until)
@@ -447,7 +463,28 @@ def main(argv: list[str] | None = None) -> int:
         warnings.extend(deploy_warnings)
         deploy_by_pr = {pr_number: d for d in built_deploys for pr_number in d.prs}
 
-    facts = metrics.compute_all_facts(all_prs, args.fix_window_days, followup_map, deploy_by_pr)
+        if args.sentry:
+            sentry_until = min(until + timedelta(days=args.fix_window_days), today)
+            end_exclusive = sentry_until + timedelta(days=1)
+            try:
+                sha_to_pr = blame.build_sha_to_pr(args.repo_path, base)
+                sentry_by_pr, sentry_warnings = sentry.attribute_new_issues(
+                    args.repo_path, owner, name, args.sentry, since, end_exclusive,
+                    built_deploys, sha_to_pr, refresh=args.refresh,
+                )
+            except sentry.SentryError as e:
+                print(f"pr-outcomes: sentry error: {e}", file=sys.stderr)
+                print("pr-outcomes: hint: set SENTRY_AUTH_TOKEN or run `sentry-cli login`", file=sys.stderr)
+                return 1
+            except blame.BlameError as e:
+                print(f"pr-outcomes: blame error: {e}", file=sys.stderr)
+                print("pr-outcomes: hint: --repo-path needs a local clone with 'origin/<base>' fetched", file=sys.stderr)
+                return 1
+            for w in sentry_warnings:
+                print(f"pr-outcomes: {w}", file=sys.stderr)
+            warnings.extend(sentry_warnings)
+
+    facts = metrics.compute_all_facts(all_prs, args.fix_window_days, followup_map, deploy_by_pr, sentry_by_pr)
     reportable = metrics.in_report_window(all_prs, since, until)
 
     if args.team:
@@ -472,7 +509,8 @@ def main(argv: list[str] | None = None) -> int:
 
     groups = {
         name_: metrics.aggregate_group(
-            prs, facts, *metrics.group_window(name_, args.group_by, since, until), production=args.production,
+            prs, facts, *metrics.group_window(name_, args.group_by, since, until),
+            production=args.production, sentry=bool(args.sentry),
         )
         for name_, prs in groups_prs.items()
     }
@@ -494,14 +532,18 @@ def main(argv: list[str] | None = None) -> int:
         }
         if args.prs:
             payload["prs"] = [
-                build_pr_json(pr, facts[pr.number], production=args.production) for pr in reportable
+                build_pr_json(pr, facts[pr.number], production=args.production, sentry_flag=bool(args.sentry))
+                for pr in reportable
             ]
         print(json.dumps(payload, indent=2))
     else:
         print(render_table(groups))
         if args.prs:
             print(json.dumps(
-                [build_pr_json(pr, facts[pr.number], production=args.production) for pr in reportable],
+                [
+                    build_pr_json(pr, facts[pr.number], production=args.production, sentry_flag=bool(args.sentry))
+                    for pr in reportable
+                ],
                 indent=2,
             ))
 

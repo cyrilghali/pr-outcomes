@@ -383,9 +383,18 @@ class ProductionFlagValidationTests(unittest.TestCase):
             cli.parse_args(["o/r", "--production"])
         self.assertEqual(ctx.exception.code, 2)
 
+    def test_sentry_without_production_exits_2(self):
+        with self.assertRaises(SystemExit) as ctx:
+            cli.parse_args(["o/r", "--sentry", "acme/widgets"])
+        self.assertEqual(ctx.exception.code, 2)
+
     def test_production_with_repo_path_is_valid(self):
         args = cli.parse_args(["o/r", "--production", "--repo-path", "/tmp/repo"])
         self.assertTrue(args.production)
+
+    def test_sentry_with_production_is_valid(self):
+        args = cli.parse_args(["o/r", "--production", "--repo-path", "/tmp/repo", "--sentry", "acme/widgets"])
+        self.assertEqual(args.sentry, "acme/widgets")
 
 
 class ProductionJsonAndTableTests(unittest.TestCase):
@@ -393,6 +402,7 @@ class ProductionJsonAndTableTests(unittest.TestCase):
 
     def _run_with_production(
         self, argv: list[str], prs: list[PR], built_deploys: list[Deploy] | None = None,
+        sentry_result: dict[int, list[str]] | None = None,
     ) -> tuple[int, str]:
         fake_stdout = io.StringIO()
         fake_stdout.isatty = lambda: False
@@ -400,6 +410,7 @@ class ProductionJsonAndTableTests(unittest.TestCase):
              mock.patch.object(cli.fetch, "fetch_prs", return_value=(prs, [])), \
              mock.patch.object(cli.deploys, "build_deploys", return_value=(built_deploys or [], [])), \
              mock.patch.object(cli.blame, "build_sha_to_pr", return_value={}), \
+             mock.patch.object(cli.sentry, "attribute_new_issues", return_value=(sentry_result or {}, [])), \
              mock.patch.object(cli.sys, "stdout", fake_stdout):
             code = cli.main(argv)
         return code, fake_stdout.getvalue()
@@ -428,6 +439,22 @@ class ProductionJsonAndTableTests(unittest.TestCase):
         code, out = self._run_with_production(self.ARGV + ["--format", "table"], [pr_], built_deploys=[deploy])
         self.assertEqual(code, 0)
         self.assertIn("-- Production --", out)
+
+    def test_sentry_key_present_only_with_sentry_flag(self):
+        pr_ = normalise_pr(_RAW["merged_0_5h"])
+        deploy = Deploy(
+            sha="s1", release_head="h1",
+            deployed_at=datetime(2026, 4, 5, tzinfo=timezone.utc),
+            prs=frozenset({pr_.number}),
+        )
+        code, out = self._run_with_production(
+            self.ARGV + ["--format", "json", "--sentry", "acme/widgets"], [pr_], built_deploys=[deploy],
+            sentry_result={pr_.number: ["PARROT-1"]},
+        )
+        self.assertEqual(code, 0)
+        payload = json.loads(out)
+        for group in payload["groups"].values():
+            self.assertIn("sentry_new_issue_count", group)
 
 
 class GhErrorHintTests(unittest.TestCase):

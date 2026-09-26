@@ -241,6 +241,7 @@ class ProductionMetricsTests(unittest.TestCase):
         for key in (
             "lead_time_to_prod_h_median", "lead_time_to_prod_h_p75", "not_deployed_count",
             "deploy_count", "deploys_per_week", "change_failure_rate", "failed_deploy_count",
+            "sentry_new_issue_count", "sentry_new_issue_pr_share",
         ):
             self.assertNotIn(key, out)
 
@@ -283,6 +284,40 @@ class ProductionMetricsTests(unittest.TestCase):
         self.assertEqual(out["not_deployed_count"], 2)
         self.assertIsNone(out["lead_time_to_prod_h_median"])
         self.assertIsNone(out["change_failure_rate"])
+
+    def test_sentry_new_issue_count_and_pr_share(self):
+        p1, p2 = pr("merged_0_5h"), pr("merged_5h")
+        assert p1.merged is not None
+        deploy = Deploy(sha="s1", release_head="h1", deployed_at=p1.merged, prs=frozenset({320, 321}))
+        deploy_by_pr = {320: deploy, 321: deploy}
+        facts = metrics.compute_all_facts(
+            [p1, p2], fix_window_days=7, deploy_by_pr=deploy_by_pr,
+            sentry_by_pr={320: ["PARROT-1"]},
+        )
+        self.assertEqual(facts[321].sentry_new_issues, [])
+
+        out = metrics.aggregate_group(
+            [p1, p2], facts, date(2026, 4, 1), date(2026, 4, 30), production=True, sentry=True,
+        )
+        self.assertEqual(out["sentry_new_issue_count"], 1)
+        self.assertEqual(out["sentry_new_issue_pr_share"], 0.5)
+
+    def test_sentry_new_issue_count_does_not_double_count_an_issue_on_two_prs(self):
+        # The same issue blamed on two PRs in the group (e.g. one blamed
+        # line each) is one issue, not two.
+        p1, p2 = pr("merged_0_5h"), pr("merged_5h")
+        assert p1.merged is not None
+        deploy = Deploy(sha="s1", release_head="h1", deployed_at=p1.merged, prs=frozenset({320, 321}))
+        deploy_by_pr = {320: deploy, 321: deploy}
+        facts = metrics.compute_all_facts(
+            [p1, p2], fix_window_days=7, deploy_by_pr=deploy_by_pr,
+            sentry_by_pr={320: ["PARROT-1"], 321: ["PARROT-1"]},
+        )
+
+        out = metrics.aggregate_group(
+            [p1, p2], facts, date(2026, 4, 1), date(2026, 4, 30), production=True, sentry=True,
+        )
+        self.assertEqual(out["sentry_new_issue_count"], 1)
 
 
 class TeamGroupTests(unittest.TestCase):
