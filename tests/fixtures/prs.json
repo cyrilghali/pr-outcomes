@@ -94,6 +94,22 @@
     "reviewThreads": {"nodes": []},
     "timelineItems": {"nodes": []}
   },
+  "approval_commented_then_rebase": {
+    "number": 204, "title": "Add cache", "body": "", "url": "https://github.com/o/r/pull/204",
+    "createdAt": "2026-01-09T00:00:00Z", "mergedAt": "2026-01-09T05:00:00Z",
+    "baseRefName": "main", "additions": 40, "deletions": 10, "changedFiles": 3,
+    "author": {"login": "alice", "__typename": "User"},
+    "labels": {"nodes": []}, "files": {"nodes": []},
+    "comments": {"nodes": []},
+    "reviews": {"nodes": [
+      {"author": {"login": "heidi", "__typename": "User"}, "state": "COMMENTED", "submittedAt": "2026-01-09T01:00:00Z", "body": "please check X", "comments": {"totalCount": 0}},
+      {"author": {"login": "heidi", "__typename": "User"}, "state": "APPROVED", "submittedAt": "2026-01-09T01:05:00Z", "body": "", "comments": {"totalCount": 0}}
+    ]},
+    "reviewThreads": {"nodes": []},
+    "timelineItems": {"nodes": [
+      {"__typename": "PullRequestCommit", "commit": {"committedDate": "2026-01-09T04:00:00Z"}}
+    ]}
+  },
   "revert_original": {
     "number": 300, "title": "Add feature Y", "body": "", "url": "https://github.com/o/r/pull/300",
     "createdAt": "2026-01-07T00:00:00Z", "mergedAt": "2026-01-07T01:00:00Z",

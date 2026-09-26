@@ -79,14 +79,15 @@ review:
 
 | Class | Meaning |
 |---|---|
-| `substantive` | They commented, and a push followed their comment. Real back-and-forth happened. |
-| `commented` | They commented, but nothing was pushed after. |
+| `substantive` | They commented, a push followed that comment, and they then approved: a push strictly between their first comment and their approval. Real back-and-forth happened. |
+| `commented` | They commented, but no push landed between that comment and their approval (including a comment and approval submitted together, even if a rebase follows before merge). |
 | `rubber_stamp` | No comment, the diff is 200+ lines, and the approval landed under 5 minutes after the PR was ready, last pushed to, or requested from them. Too fast to have been read. |
 | `silent` | Every other no-comment approval. We cannot tell if it was a real review, so we do not guess. |
 
 The table also reports two more numbers. A review round is a human
-non-author review or comment followed by a push before the next one; we
-report the mean per PR and the share of PRs with at least one round. Human
+non-author review or comment, then a push, then another human review or
+comment; we report the mean per PR and the share of PRs with at least one
+round. Human
 and bot comments count review bodies and inline comments alongside plain
 comments, excluding the author's own, and are reported as a mean per PR.
 

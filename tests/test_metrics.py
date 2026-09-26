@@ -40,6 +40,13 @@ class ApprovalClassTests(unittest.TestCase):
         classes = metrics.compute_approval_classes(pr("approval_silent"))
         self.assertEqual(classes["frank"], "silent")
 
+    def test_commented_when_push_only_after_approval(self):
+        # comment+approve back to back, then a rebase before merge: the push
+        # never sat between the comment and the approval, so this is not
+        # substantive even though a push happened somewhere in the PR.
+        classes = metrics.compute_approval_classes(pr("approval_commented_then_rebase"))
+        self.assertEqual(classes["heidi"], "commented")
+
 
 class RevertTests(unittest.TestCase):
     def test_matched_by_body_reference(self):

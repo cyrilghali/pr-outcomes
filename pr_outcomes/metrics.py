@@ -100,8 +100,11 @@ def compute_approval_classes(pr: PR) -> dict:
         )
         if reviewer_comments:
             first_comment = reviewer_comments[0]
-            pushed_after = any(p > first_comment for p in pushes)
-            classes[login] = "substantive" if pushed_after else "commented"
+            # substantive requires the push between the comment and this same
+            # approval; a push before the comment or after the approval (e.g.
+            # a rebase right before merge) proves nothing was re-reviewed.
+            pushed_between = any(first_comment < p < approval_time for p in pushes)
+            classes[login] = "substantive" if pushed_between else "commented"
             continue
 
         last_push_before = max((p for p in pushes if p < approval_time), default=None)
