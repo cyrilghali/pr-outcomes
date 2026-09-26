@@ -173,4 +173,24 @@ class CubicScoreTest(unittest.TestCase):
                                   review("2026-09-01T13:00:00Z", 2)]},
             "timelineItems": {"nodes": []},
         }
-        self.assertEqual(fetch.normalise_pr(node).cubic_score, 5)
+        pr = fetch.normalise_pr(node)
+        self.assertEqual((pr.cubic_first_score, pr.cubic_score), (3, 5))
+
+    def test_score_is_read_from_edit_history_when_an_edit_drops_it(self):
+        node = {
+            "number": 1, "title": "t", "url": "u", "author": {"login": "a"}, "baseRefName": "staging",
+            "createdAt": "2026-09-01T00:00:00Z", "mergedAt": "2026-09-01T12:00:00Z",
+            "reviews": {"nodes": [{
+                "author": {"login": "cubic-dev-ai", "__typename": "Bot"}, "state": "COMMENTED",
+                "submittedAt": "2026-09-01T01:00:00Z", "comments": {"totalCount": 0},
+                "body": "Review completed against the latest diff",
+                "userContentEdits": {"nodes": [
+                    {"editedAt": "2026-09-01T03:00:00Z", "diff": "Review completed against the latest diff"},
+                    {"editedAt": "2026-09-01T02:00:00Z", "diff": "<!-- cubic:review-summary:confidence-score:4/5 -->"},
+                    {"editedAt": "2026-09-01T01:00:00Z", "diff": "<!-- cubic:review-summary:confidence-score:2/5 -->"},
+                ]},
+            }]},
+            "timelineItems": {"nodes": []},
+        }
+        pr = fetch.normalise_pr(node)
+        self.assertEqual((pr.cubic_first_score, pr.cubic_score), (2, 4))

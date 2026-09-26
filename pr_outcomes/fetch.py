@@ -34,7 +34,7 @@ query($q:String!,$cursor:String){ search(query:$q,type:ISSUE,first:25,after:$cur
  author{login __typename}
  labels(first:20){nodes{name}}
  comments(first:50){totalCount nodes{author{login __typename} createdAt}}
- reviews(first:50){totalCount nodes{author{login __typename} state submittedAt body comments{totalCount}}}
+ reviews(first:50){totalCount nodes{author{login __typename} state submittedAt body comments{totalCount} userContentEdits(first:20){nodes{editedAt diff}}}}
  reviewThreads(first:50){totalCount nodes{path comments(first:20){nodes{author{login __typename} createdAt}}}}
 }}}}
 """
@@ -92,6 +92,7 @@ class PR:
     labels: list[str] = field(default_factory=list)
     events: list[Event] = field(default_factory=list)
     cubic_score: int | None = None  # last Cubic confidence score (1-5) submitted before merge
+    cubic_first_score: int | None = None
 
 
 class GhError(RuntimeError):
@@ -203,12 +204,17 @@ def normalise_pr(node: JSON) -> PR:
             ))
 
     merged = _parse_dt(node["mergedAt"]) if node.get("mergedAt") else None
-    cubic_score: int | None = None
+    # Cubic edits its review in place and a later edit can drop the score, so
+    # every version of every review body is read, not only the current one.
+    cubic_scores: list[tuple[datetime, int]] = []
     for review in node.get("reviews", {}).get("nodes", []):
         reviewer = _actor_from_json(review.get("author"))
-        score = CUBIC_SCORE_RE.search(review.get("body") or "")
-        if score and (merged is None or _parse_dt(review["submittedAt"]) <= merged):
-            cubic_score = int(score.group(1))  # reviews come oldest first, so the last one wins
+        edits = review.get("userContentEdits", {}).get("nodes", [])
+        versions = [(e["editedAt"], e.get("diff") or "") for e in edits] or [(review["submittedAt"], review.get("body") or "")]
+        for at_raw, text in versions:
+            at, score = _parse_dt(at_raw), CUBIC_SCORE_RE.search(text)
+            if score and (merged is None or at <= merged):
+                cubic_scores.append((at, int(score.group(1))))
         if reviewer.login == author.login:
             continue  # the PR author's own reviews never count
         at = _parse_dt(review["submittedAt"])
@@ -260,7 +266,8 @@ def normalise_pr(node: JSON) -> PR:
         changed_files=node.get("changedFiles", 0),
         labels=[l["name"] for l in node.get("labels", {}).get("nodes", [])],
         events=events,
-        cubic_score=cubic_score,
+        cubic_score=max(cubic_scores)[1] if cubic_scores else None,
+        cubic_first_score=min(cubic_scores)[1] if cubic_scores else None,
     )
 
 
@@ -275,10 +282,9 @@ def _week_chunks(start: date, end: date):
 
 
 def _cache_path(owner: str, name: str, base: str, frm: date, to: date) -> str:
-    # v2: the query shape changed (timelineItems moved to a per-PR fetch);
-    # bump this segment again if the cached node shape changes further.
+    # v3: reviews carry their edit history; bump again if the cached node shape changes.
     return os.path.join(
-        CACHE_ROOT, "v2", f"{owner}__{name}", base, f"{frm.isoformat()}_{to.isoformat()}.json"
+        CACHE_ROOT, "v3", f"{owner}__{name}", base, f"{frm.isoformat()}_{to.isoformat()}.json"
     )
 
 
