@@ -213,6 +213,10 @@ def parse_args(argv=None):
     p.add_argument("--json", action="store_true", help="Alias for --format json. Default: off.")
     p.add_argument("--prs", action="store_true", help="Include per-PR facts under the 'prs' key (json format only). Default: off.")
     p.add_argument("--refresh", action="store_true", help="Bypass the on-disk PR and blame caches. Default: off.")
+    p.add_argument(
+        "--verbose", action="store_true",
+        help="Print progress lines (cache hit / fetching) even when stderr isn't a TTY. Default: off.",
+    )
     return p.parse_args(argv)
 
 
@@ -251,8 +255,11 @@ def main(argv=None) -> int:
 
     try:
         base = args.base or fetch.get_default_branch(owner, name)
-        print(f"pr-outcomes: base={base} since={since} until={until}", file=sys.stderr)
-        all_prs, fetch_warnings = fetch.fetch_prs(owner, name, base, since, until, args.fix_window_days, refresh=args.refresh)
+        if args.verbose or sys.stderr.isatty():
+            print(f"pr-outcomes: base={base} since={since} until={until}", file=sys.stderr)
+        all_prs, fetch_warnings = fetch.fetch_prs(
+            owner, name, base, since, until, args.fix_window_days, refresh=args.refresh, verbose=args.verbose,
+        )
         warnings.extend(fetch_warnings)
     except fetch.GhError as e:
         print(f"pr-outcomes: gh error: {e}", file=sys.stderr)

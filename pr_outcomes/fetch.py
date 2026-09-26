@@ -333,14 +333,21 @@ def _chunk_reusable(path: str, to: date) -> bool:
     return mtime > chunk_end
 
 
-def _load_or_fetch_chunk(owner: str, name: str, base: str, frm: date, to: date, refresh: bool, warnings: list[str]) -> list[dict]:
+def _progress(msg: str, verbose: bool) -> None:
+    if verbose or sys.stderr.isatty():
+        print(f"pr-outcomes: {msg}", file=sys.stderr)
+
+
+def _load_or_fetch_chunk(
+    owner: str, name: str, base: str, frm: date, to: date, refresh: bool, warnings: list[str], verbose: bool,
+) -> list[dict]:
     path = _cache_path(owner, name, base, frm, to)
     if not refresh and _chunk_reusable(path, to):
-        print(f"pr-outcomes: cache hit {frm}..{to}", file=sys.stderr)
+        _progress(f"cache hit {frm}..{to}", verbose)
         with open(path) as f:
             return json.load(f)
 
-    print(f"pr-outcomes: fetching {owner}/{name} {frm}..{to}", file=sys.stderr)
+    _progress(f"fetching {owner}/{name} {frm}..{to}", verbose)
     started = time.time()
     nodes = _fetch_chunk_nodes(owner, name, base, frm, to, warnings)
 
@@ -361,16 +368,19 @@ def _load_or_fetch_chunk(owner: str, name: str, base: str, frm: date, to: date, 
 
 
 def fetch_prs(
-    owner: str, name: str, base: str, since: date, until: date, fix_window_days: int, refresh: bool = False,
+    owner: str, name: str, base: str, since: date, until: date, fix_window_days: int,
+    refresh: bool = False, verbose: bool = False,
 ) -> tuple[list[PR], list[str]]:
     """Fetch every merged PR in [since, min(until + fix_window_days, today)],
     normalised to PR dataclasses, newest-fetch-range chunks refetched, older
     ones cached forever on disk. Returns (prs, warnings) -- warnings are also
-    printed to stderr as they're found."""
+    printed to stderr as they're found. Progress lines ("cache hit",
+    "fetching") print only when stderr is a TTY or verbose=True; warnings and
+    errors always print regardless."""
     today = datetime.now(timezone.utc).date()
     fetch_until = min(until + timedelta(days=fix_window_days), today)
     all_nodes: list[dict] = []
     warnings: list[str] = []
     for frm, to in _week_chunks(since, fetch_until):
-        all_nodes.extend(_load_or_fetch_chunk(owner, name, base, frm, to, refresh, warnings))
+        all_nodes.extend(_load_or_fetch_chunk(owner, name, base, frm, to, refresh, warnings, verbose))
     return [normalise_pr(n) for n in all_nodes], warnings
