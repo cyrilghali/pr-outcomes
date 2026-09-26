@@ -217,6 +217,27 @@ shipped was any good. Read the speed numbers next to the outcome numbers
 (revert rate, follow-up fix rate), never instead of them, and do not set a
 target on one metric in isolation.
 
+## Share it
+
+For someone who doesn't want to clone the repo or install the package:
+
+```
+bash scripts/build.sh
+```
+
+This produces `dist/pr-outcomes`, a ~65 KB [Python zipapp](https://docs.python.org/3/library/zipapp.html)
+built from the standard library alone. It is not a native binary: the
+recipient needs [`uv`](https://docs.astral.sh/uv/) installed (it runs the
+zipapp under `uv run --python >=3.12`, which fetches a matching Python if
+none is on their machine) and `gh auth login` done. A local clone
+(`--repo-path`) is optional and only needed for follow-up-fix attribution.
+Send them `dist/pr-outcomes` and they run it exactly like the installed
+command:
+
+```
+./pr-outcomes tryriot/parrot --since 2026-08-01
+```
+
 ## Development
 
 ```
