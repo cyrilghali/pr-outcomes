@@ -200,10 +200,15 @@ def normalise_pr(node: dict) -> PR:
         if reviewer.login == author.login:
             continue  # the PR author's own reviews never count
         at = _parse_dt(review["submittedAt"])
-        events.append(Event(at=at, kind="review", actor=reviewer, state=review.get("state")))
+        state = review.get("state")
+        events.append(Event(at=at, kind="review", actor=reviewer, state=state))
         body = (review.get("body") or "").strip()
         comment_count = review.get("comments", {}).get("totalCount", 0)
-        if body or comment_count > 0:
+        # An approval's own body ("LGTM", a thumbs-up) is not engagement: it
+        # never prompted a re-look. Inline comments attached to the approval
+        # still count, since those are real, addressable feedback.
+        counts_as_comment = comment_count > 0 or (body and state != "APPROVED")
+        if counts_as_comment:
             events.append(Event(at=at, kind="comment", actor=reviewer))
 
     for comment in node.get("comments", {}).get("nodes", []):

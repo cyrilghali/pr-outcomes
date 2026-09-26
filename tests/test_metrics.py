@@ -48,6 +48,18 @@ class ApprovalClassTests(unittest.TestCase):
         classes = metrics.compute_approval_classes(pr("approval_commented_then_rebase"))
         self.assertEqual(classes["heidi"], "commented")
 
+    def test_approval_body_alone_is_not_commented(self):
+        # "LGTM" as the approval's own body is not engagement: with no other
+        # comment and a small diff, this is silent, not commented.
+        classes = metrics.compute_approval_classes(pr("approval_body_only"))
+        self.assertEqual(classes["gina"], "silent")
+
+    def test_inline_comments_on_the_approval_review_count(self):
+        # Inline comments attached to the approval review itself are real
+        # feedback, unlike the approval's own body text.
+        classes = metrics.compute_approval_classes(pr("approval_inline_comments_on_approval"))
+        self.assertEqual(classes["heidi"], "commented")
+
 
 class RevertTests(unittest.TestCase):
     def test_matched_by_body_reference(self):

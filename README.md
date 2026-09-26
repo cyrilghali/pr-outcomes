@@ -87,7 +87,11 @@ is read, never GitHub state, so this needs a local clone passed through
 ### Review depth
 
 For each human non-author approver, we classify their first `APPROVED`
-review:
+review. "Commented" means the reviewer left, at or before that approval, a
+non-approval review with a body or inline comments, a review-thread comment,
+or an issue comment, or inline comments attached to the approval review
+itself. The approval review's own body text ("LGTM", a thumbs-up) does not
+count on its own, since it never prompted a re-look.
 
 | Class | Meaning |
 |---|---|
