@@ -43,6 +43,16 @@ same range is fast. Blame attribution is cached per commit sha under
 `blame/<sha>.json`, since a fix PR's attribution depends only on that commit
 and never changes; uncached commits are blamed in parallel.
 
+GitHub's GraphQL API silently truncates a PR's timeline (commits, force
+pushes, ready-for-review, review-requested) when one request resolves
+timelines for more than a handful of PRs, with no signal in the response that
+it happened. To avoid that, each PR's timeline is fetched in its own request,
+after the search page that lists the PRs; the fetches run four at a time.
+Other connections (reviews, comments, review threads, files) are still
+fetched inside the search query. If GitHub truncates one of those too, the
+tool prints one warning per affected PR to stderr instead of silently
+under-counting.
+
 ## Metrics
 
 Every metric is computed per PR first, then aggregated per group as a

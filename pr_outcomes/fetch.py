@@ -8,31 +8,48 @@ import os
 import subprocess
 import sys
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 
 CACHE_ROOT = os.path.expanduser("~/.cache/pr-outcomes")
 
+# GitHub's GraphQL API silently truncates timelineItems (and other nested
+# connections) once a single request resolves more than a handful of PRs'
+# worth of them, with no signal in the response that it happened. So the
+# search query below carries no timelineItems: each PR's timeline is fetched
+# in its own request by _fetch_pr_timeline. totalCount on the other
+# connections lets _warn_truncated_connections catch the same failure mode
+# there without needing a second request for those.
 QUERY = """
 query($q:String!,$cursor:String){ search(query:$q,type:ISSUE,first:25,after:$cursor){ issueCount pageInfo{hasNextPage endCursor} nodes{ ... on PullRequest{
  number title body url createdAt mergedAt baseRefName additions deletions changedFiles
  author{login __typename}
  labels(first:20){nodes{name}}
- files(first:100){nodes{path}}
- comments(first:50){nodes{author{login __typename} createdAt}}
- reviews(first:50){nodes{author{login __typename} state submittedAt body comments{totalCount}}}
- reviewThreads(first:50){nodes{path comments(first:20){nodes{author{login __typename} createdAt}}}}
- timelineItems(first:100,itemTypes:[PULL_REQUEST_COMMIT,HEAD_REF_FORCE_PUSHED_EVENT,READY_FOR_REVIEW_EVENT,REVIEW_REQUESTED_EVENT]){nodes{__typename
-   ... on PullRequestCommit{commit{committedDate}}
-   ... on HeadRefForcePushedEvent{createdAt}
-   ... on ReadyForReviewEvent{createdAt}
-   ... on ReviewRequestedEvent{createdAt requestedReviewer{... on User{login} ... on Bot{login}}}}}
+ files(first:100){totalCount nodes{path}}
+ comments(first:50){totalCount nodes{author{login __typename} createdAt}}
+ reviews(first:50){totalCount nodes{author{login __typename} state submittedAt body comments{totalCount}}}
+ reviewThreads(first:50){totalCount nodes{path comments(first:20){nodes{author{login __typename} createdAt}}}}
 }}}}
+"""
+
+TIMELINE_ITEM_TYPES = "[PULL_REQUEST_COMMIT,HEAD_REF_FORCE_PUSHED_EVENT,READY_FOR_REVIEW_EVENT,REVIEW_REQUESTED_EVENT]"
+
+TIMELINE_QUERY = f"""
+query($owner:String!,$name:String!,$number:Int!,$cursor:String){{ repository(owner:$owner,name:$name){{ pullRequest(number:$number){{
+ timelineItems(first:100,after:$cursor,itemTypes:{TIMELINE_ITEM_TYPES}){{ pageInfo{{hasNextPage endCursor}} nodes{{__typename
+   ... on PullRequestCommit{{commit{{committedDate}}}}
+   ... on HeadRefForcePushedEvent{{createdAt}}
+   ... on ReadyForReviewEvent{{createdAt}}
+   ... on ReviewRequestedEvent{{createdAt requestedReviewer{{... on User{{login}} ... on Bot{{login}}}}}}}}}}
+}}}}}}
 """
 
 DEFAULT_BRANCH_QUERY = """
 query($owner:String!,$name:String!){ repository(owner:$owner,name:$name){ defaultBranchRef{ name } } }
 """
+
+TRUNCATION_WARNING_KEYS = ("reviews", "comments", "reviewThreads", "files")
 
 
 @dataclass(frozen=True)
@@ -78,12 +95,15 @@ def _parse_dt(s: str) -> datetime:
     return datetime.fromisoformat(s.replace("Z", "+00:00"))
 
 
-def _run_gh_graphql(variables: dict) -> dict:
-    args = ["gh", "api", "graphql", "-f", f"query={QUERY}"]
+def _run_gh_graphql(query: str, variables: dict) -> dict:
+    args = ["gh", "api", "graphql", "-f", f"query={query}"]
     for key, value in variables.items():
         if value is None:
             continue
-        args += ["-f", f"{key}={value}"]
+        # -F (not -f) so an int variable (e.g. $number:Int!) is sent typed,
+        # not as the string -f always produces.
+        flag = "-F" if isinstance(value, int) else "-f"
+        args += [flag, f"{key}={value}"]
     proc = subprocess.run(args, capture_output=True, text=True)
     if proc.returncode != 0:
         raise GhError(proc.stderr.strip())
@@ -113,6 +133,15 @@ def _actor_from_json(raw: dict | None) -> Actor:
     login = raw.get("login", "ghost")
     is_bot = raw.get("__typename") == "Bot" or login.endswith("[bot]")
     return Actor(login=login, is_bot=is_bot)
+
+
+def merge_timeline_into_node(node: dict, timeline_nodes: list[dict]) -> dict:
+    """Return a copy of `node` with its timelineItems replaced by
+    `timeline_nodes`, fetched separately per-PR. Pure so the merge can be
+    unit-tested without a network call."""
+    merged = dict(node)
+    merged["timelineItems"] = {"nodes": timeline_nodes}
+    return merged
 
 
 def normalise_pr(node: dict) -> PR:
@@ -208,9 +237,39 @@ def _week_chunks(start: date, end: date):
 
 
 def _cache_path(owner: str, name: str, base: str, frm: date, to: date) -> str:
+    # v2: the query shape changed (timelineItems moved to a per-PR fetch);
+    # bump this segment again if the cached node shape changes further.
     return os.path.join(
-        CACHE_ROOT, f"{owner}__{name}", base, f"{frm.isoformat()}_{to.isoformat()}.json"
+        CACHE_ROOT, "v2", f"{owner}__{name}", base, f"{frm.isoformat()}_{to.isoformat()}.json"
     )
+
+
+def _warn_truncated_connections(nodes: list[dict]) -> None:
+    for n in nodes:
+        for key in TRUNCATION_WARNING_KEYS:
+            conn = n.get(key) or {}
+            total = conn.get("totalCount")
+            returned = len(conn.get("nodes", []))
+            if total is not None and total > returned:
+                print(
+                    f"pr-outcomes: PR #{n.get('number')} {key} truncated ({returned}/{total}, not refetched)",
+                    file=sys.stderr,
+                )
+
+
+def _fetch_pr_timeline(owner: str, name: str, number: int) -> list[dict]:
+    nodes: list[dict] = []
+    cursor = None
+    while True:
+        variables = {"owner": owner, "name": name, "number": number, "cursor": cursor}
+        data = _run_gh_graphql(TIMELINE_QUERY, variables)
+        timeline = data["data"]["repository"]["pullRequest"]["timelineItems"]
+        nodes.extend(timeline["nodes"])
+        page_info = timeline["pageInfo"]
+        if not page_info["hasNextPage"]:
+            break
+        cursor = page_info["endCursor"]
+    return nodes
 
 
 def _fetch_chunk_nodes(owner: str, name: str, base: str, frm: date, to: date) -> list[dict]:
@@ -219,14 +278,21 @@ def _fetch_chunk_nodes(owner: str, name: str, base: str, frm: date, to: date) ->
     cursor = None
     while True:
         variables = {"q": q, "cursor": cursor}
-        data = _run_gh_graphql(variables)
+        data = _run_gh_graphql(QUERY, variables)
         search = data["data"]["search"]
         nodes.extend(n for n in search["nodes"] if n)
         page_info = search["pageInfo"]
         if not page_info["hasNextPage"]:
             break
         cursor = page_info["endCursor"]
-    return nodes
+
+    _warn_truncated_connections(nodes)
+
+    # One request per PR, so GitHub's silent per-request truncation of
+    # timelineItems (see the QUERY comment above) can't drop force-pushes.
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        timelines = list(pool.map(lambda n: _fetch_pr_timeline(owner, name, n["number"]), nodes))
+    return [merge_timeline_into_node(n, t) for n, t in zip(nodes, timelines)]
 
 
 def _load_or_fetch_chunk(owner: str, name: str, base: str, frm: date, to: date, refresh: bool) -> list[dict]:
