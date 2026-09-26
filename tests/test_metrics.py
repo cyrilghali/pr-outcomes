@@ -394,6 +394,60 @@ class DepthGroupTests(unittest.TestCase):
         self.assertEqual({n.number for n in groups["no-human-approval"]}, {pr("no_review").number})
 
 
+class ReviewedGroupPrsTests(unittest.TestCase):
+    def test_groups_by_human_approved_bot_only_no_review(self):
+        prs = [pr("human_approved"), pr("bot_only"), pr("no_review")]
+        facts = metrics.compute_all_facts(prs, fix_window_days=7)
+
+        groups = metrics.group_prs(prs, facts, "reviewed")
+
+        self.assertEqual({p.number for p in groups["human-approved"]}, {pr("human_approved").number})
+        self.assertEqual({p.number for p in groups["bot-only"]}, {pr("bot_only").number})
+        self.assertEqual({p.number for p in groups["no-review"]}, {pr("no_review").number})
+
+
+class LabelGroupPrsTests(unittest.TestCase):
+    def test_multi_label_pr_lands_in_both_groups_and_unlabeled_in_none(self):
+        multi = pr("no_review")
+        multi.labels = ["bug", "urgent"]
+        unlabeled = pr("human_approved")  # fixture has no labels
+
+        facts = metrics.compute_all_facts([multi, unlabeled], fix_window_days=7)
+        groups = metrics.group_prs([multi, unlabeled], facts, "label")
+
+        self.assertEqual({p.number for p in groups["bug"]}, {multi.number})
+        self.assertEqual({p.number for p in groups["urgent"]}, {multi.number})
+        self.assertEqual({p.number for p in groups["(none)"]}, {unlabeled.number})
+
+
+class ApproverGroupPrsTests(unittest.TestCase):
+    def test_pr_with_two_approvers_lands_in_both_and_no_approver_in_none(self):
+        two_approvers, none_approved = pr("human_approved"), pr("no_review")
+        facts = {
+            two_approvers.number: metrics.PRFacts(
+                number=two_approvers.number,
+                time_to_first_human_review_h=None, time_to_first_bot_review_h=None,
+                time_to_first_approval_h=None, time_to_merge_h=None, ready_to_merge_h=None,
+                review_rounds=0, changes_requested=0, human_comments=0, bot_comments=0,
+                size=0, changed_files=0, reviewed_group="",
+                approval_classes={"grace": "silent", "carol": "changed_by_review"},
+            ),
+            none_approved.number: metrics.PRFacts(
+                number=none_approved.number,
+                time_to_first_human_review_h=None, time_to_first_bot_review_h=None,
+                time_to_first_approval_h=None, time_to_merge_h=None, ready_to_merge_h=None,
+                review_rounds=0, changes_requested=0, human_comments=0, bot_comments=0,
+                size=0, changed_files=0, reviewed_group="", approval_classes={},
+            ),
+        }
+
+        groups = metrics.group_prs([two_approvers, none_approved], facts, "approver")
+
+        self.assertEqual({p.number for p in groups["grace"]}, {two_approvers.number})
+        self.assertEqual({p.number for p in groups["carol"]}, {two_approvers.number})
+        self.assertEqual({p.number for p in groups["(none)"]}, {none_approved.number})
+
+
 class GroupWindowTests(unittest.TestCase):
     def test_period_group_is_clipped_to_the_report_window(self):
         since, until = date(2026, 6, 10), date(2026, 9, 18)

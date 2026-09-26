@@ -276,6 +276,106 @@ class GroupByWeekThroughputEndToEndTests(unittest.TestCase):
         self.assertEqual(payload["groups"]["2026-W01"]["throughput_per_week"], 1.75)
 
 
+class RefreshFlagTests(unittest.TestCase):
+    """--refresh must reach every on-disk cache fetch.py and blame.py own:
+    the PR chunk cache, the org-team cache, and the blame cache."""
+
+    def test_refresh_passed_to_pr_chunk_fetch(self):
+        fake_stdout = io.StringIO()
+        fake_stdout.isatty = lambda: False
+        with mock.patch.object(cli.fetch, "get_default_branch", return_value="main"), \
+             mock.patch.object(cli.fetch, "fetch_prs", return_value=([], [])) as fetch_prs, \
+             mock.patch.object(cli.sys, "stdout", fake_stdout):
+            cli.main(["o/r", "--refresh", "--format", "json"])
+        self.assertTrue(fetch_prs.call_args.kwargs["refresh"])
+
+    def test_refresh_passed_to_team_membership_fetch(self):
+        fake_stdout = io.StringIO()
+        fake_stdout.isatty = lambda: False
+        with mock.patch.object(cli.fetch, "get_default_branch", return_value="main"), \
+             mock.patch.object(cli.fetch, "fetch_org_teams", return_value=({"alice": {"sonar"}}, [])) as fetch_teams, \
+             mock.patch.object(cli.fetch, "fetch_prs", return_value=([], [])), \
+             mock.patch.object(cli.sys, "stdout", fake_stdout):
+            cli.main(["o/r", "--team", "sonar", "--refresh", "--format", "json"])
+        self.assertTrue(fetch_teams.call_args.kwargs["refresh"])
+
+    def test_refresh_passed_to_blame_followup_fix_computation(self):
+        fake_stdout = io.StringIO()
+        fake_stdout.isatty = lambda: False
+        with mock.patch.object(cli.fetch, "get_default_branch", return_value="main"), \
+             mock.patch.object(cli.fetch, "fetch_prs", return_value=([], [])), \
+             mock.patch.object(cli.blame, "compute_followup_fixes", return_value={}) as compute_followups, \
+             mock.patch.object(cli.sys, "stdout", fake_stdout):
+            cli.main(["o/r", "--repo-path", "/tmp/does-not-matter", "--refresh", "--format", "json"])
+        self.assertTrue(compute_followups.call_args.kwargs["refresh"])
+
+
+class VerboseFlagTests(unittest.TestCase):
+    """Progress lines print on a non-TTY stderr only with --verbose."""
+
+    def _stderr_output(self, argv: list[str]) -> str:
+        fake_stdout = io.StringIO()
+        fake_stdout.isatty = lambda: False
+        fake_stderr = io.StringIO()
+        fake_stderr.isatty = lambda: False
+        with mock.patch.object(cli.fetch, "get_default_branch", return_value="main"), \
+             mock.patch.object(cli.fetch, "fetch_prs", return_value=([], [])), \
+             mock.patch.object(cli.sys, "stdout", fake_stdout), \
+             mock.patch.object(cli.sys, "stderr", fake_stderr):
+            cli.main(argv)
+        return fake_stderr.getvalue()
+
+    def test_verbose_prints_progress_line_on_non_tty_stderr(self):
+        err = self._stderr_output(["o/r", "--verbose", "--format", "json"])
+        self.assertIn("pr-outcomes: base=", err)
+
+    def test_no_verbose_omits_progress_line_on_non_tty_stderr(self):
+        err = self._stderr_output(["o/r", "--format", "json"])
+        self.assertNotIn("pr-outcomes: base=", err)
+
+
+class HelpTests(unittest.TestCase):
+    def test_help_exits_0_with_examples_block(self):
+        fake_stdout = io.StringIO()
+        with mock.patch("sys.stdout", fake_stdout):
+            with self.assertRaises(SystemExit) as ctx:
+                cli.parse_args(["--help"])
+        self.assertEqual(ctx.exception.code, 0)
+        self.assertIn("Examples:", fake_stdout.getvalue())
+
+
+class PrsPerPrFactsTests(unittest.TestCase):
+    """--prs adds per-PR facts, in both the json and table formats."""
+
+    def test_json_prs_contains_expected_per_pr_facts(self):
+        pr = normalise_pr(_RAW["human_approved"])  # author alice, one approver: grace
+        code, out = _run_main(
+            ["o/r", "--since", "2026-01-01", "--until", "2026-01-31", "--format", "json", "--prs"], [pr],
+        )
+        self.assertEqual(code, 0)
+        fact = json.loads(out)["prs"][0]
+        self.assertEqual(fact["number"], 802)
+        self.assertEqual(fact["author"], "alice")
+        self.assertEqual(fact["reviewed_group"], "human-approved")
+        self.assertEqual(fact["approval_classes"], {"grace": "silent"})
+
+    def test_table_prs_json_block_matches_the_same_facts(self):
+        pr = normalise_pr(_RAW["human_approved"])
+        fake_stdout = io.StringIO()
+        fake_stdout.isatty = lambda: True  # forces the table branch
+        with mock.patch.object(cli.fetch, "get_default_branch", return_value="main"), \
+             mock.patch.object(cli.fetch, "fetch_prs", return_value=([pr], [])), \
+             mock.patch.object(cli.sys, "stdout", fake_stdout):
+            code = cli.main([
+                "o/r", "--since", "2026-01-01", "--until", "2026-01-31", "--format", "table", "--prs",
+            ])
+        self.assertEqual(code, 0)
+        out = fake_stdout.getvalue()
+        prs_json = json.loads(out[out.index("["):])
+        self.assertEqual(prs_json[0]["number"], 802)
+        self.assertEqual(prs_json[0]["approval_classes"], {"grace": "silent"})
+
+
 class GhErrorHintTests(unittest.TestCase):
     def test_auth_problem(self):
         self.assertIn("gh auth status", cli.gh_error_hint("HTTP 401: Bad credentials"))
