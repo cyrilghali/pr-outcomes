@@ -221,6 +221,17 @@ def _warn(msg: str, warnings: list[str]) -> None:
     warnings.append(msg)
 
 
+def gh_error_hint(stderr: str) -> str:
+    lowered = stderr.lower()
+    if "rate limit" in lowered or "abuse" in lowered:
+        return "retry later, or rerun the same command -- finished weeks stay cached"
+    if "could not resolve" in lowered or "not found" in lowered:
+        return "check owner/repo spelling and that you have access"
+    if "auth" in lowered or "401" in lowered or "403" in lowered:
+        return "run `gh auth status` to check your GitHub authentication"
+    return "run `gh auth status`, or retry -- finished weeks stay cached"
+
+
 def main(argv=None) -> int:
     args = parse_args(argv)
     today = date.today()
@@ -245,6 +256,7 @@ def main(argv=None) -> int:
         warnings.extend(fetch_warnings)
     except fetch.GhError as e:
         print(f"pr-outcomes: gh error: {e}", file=sys.stderr)
+        print(f"pr-outcomes: hint: {gh_error_hint(str(e))}", file=sys.stderr)
         return 1
 
     followup_map = None
@@ -255,6 +267,10 @@ def main(argv=None) -> int:
             )
         except blame.BlameError as e:
             print(f"pr-outcomes: blame error: {e}", file=sys.stderr)
+            print(
+                "pr-outcomes: hint: --repo-path needs a local clone with 'origin/<base>' fetched",
+                file=sys.stderr,
+            )
             return 1
     else:
         _warn("follow-up fixes need --repo-path", warnings)

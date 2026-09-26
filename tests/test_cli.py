@@ -55,5 +55,16 @@ class DateValidatorTests(unittest.TestCase):
         self.assertIn("2026-08-01", str(ctx.exception))
 
 
+class GhErrorHintTests(unittest.TestCase):
+    def test_auth_problem(self):
+        self.assertIn("gh auth status", cli.gh_error_hint("HTTP 401: Bad credentials"))
+
+    def test_not_found(self):
+        self.assertIn("owner/repo", cli.gh_error_hint('Could not resolve to a Repository with the name "x/y"'))
+
+    def test_rate_limit(self):
+        self.assertIn("retry later", cli.gh_error_hint("You have exceeded a secondary rate limit"))
+
+
 if __name__ == "__main__":
     unittest.main()
