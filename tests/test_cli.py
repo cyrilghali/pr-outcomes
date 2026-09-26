@@ -1,6 +1,7 @@
 import argparse
 import io
 import unittest
+from datetime import date
 from unittest import mock
 
 from pr_outcomes import cli
@@ -28,6 +29,31 @@ class FormatDefaultTests(unittest.TestCase):
 
     def test_json_flag_wins_even_when_tty(self):
         self.assertEqual(self._fmt(["o/r", "--json"], isatty=True), "json")
+
+
+class ResolveSinceUntilTests(unittest.TestCase):
+    def test_until_defaults_to_today(self):
+        since, until = cli.resolve_since_until(None, None, date(2026, 9, 26))
+        self.assertEqual(until, date(2026, 9, 26))
+
+    def test_since_defaults_to_90_days_before_until(self):
+        since, until = cli.resolve_since_until(None, date(2026, 9, 18), date(2026, 9, 26))
+        self.assertEqual(since, date(2026, 6, 20))
+        self.assertEqual(until, date(2026, 9, 18))
+
+    def test_since_defaults_off_today_when_until_also_defaulted(self):
+        since, until = cli.resolve_since_until(None, None, date(2026, 9, 26))
+        self.assertEqual(since, date(2026, 6, 28))
+
+    def test_since_after_until_raises_with_corrected_example(self):
+        with self.assertRaises(ValueError) as ctx:
+            cli.resolve_since_until(date(2026, 9, 20), date(2026, 9, 1), date(2026, 9, 26))
+        self.assertIn("2026-09-01", str(ctx.exception))
+
+    def test_since_after_until_exits_2_via_parse_args(self):
+        with self.assertRaises(SystemExit) as ctx:
+            cli.parse_args(["o/r", "--since", "2026-09-20", "--until", "2026-09-01"])
+        self.assertEqual(ctx.exception.code, 2)
 
 
 class RepoValidatorTests(unittest.TestCase):
