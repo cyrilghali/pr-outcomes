@@ -56,7 +56,13 @@ def parse_diff_hunks(diff_text: str) -> dict[str, list[tuple[int, int]]]:
 
 
 def _run_git(repo_path: str, args: list[str]) -> str:
-    proc = subprocess.run(["git", "-C", repo_path, *args], capture_output=True, text=True)
+    # errors="replace": a diff or blame can carry non-UTF-8 file content
+    # (e.g. a Latin-1 source file); the lines this module parses (diff
+    # headers, hunk headers, blame's porcelain sha) are always ASCII, so a
+    # replacement character in unrelated content is harmless.
+    proc = subprocess.run(
+        ["git", "-C", repo_path, *args], capture_output=True, text=True, encoding="utf-8", errors="replace",
+    )
     if proc.returncode != 0:
         raise BlameError(proc.stderr.strip())
     return proc.stdout
