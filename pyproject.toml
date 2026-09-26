@@ -1,0 +1,16 @@
+[project]
+name = "pr-outcomes"
+version = "0.1.0"
+description = "PR review/outcome diagnostics from GitHub's GraphQL API"
+requires-python = ">=3.12"
+dependencies = []
+
+[project.scripts]
+pr-outcomes = "pr_outcomes.cli:main"
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["pr_outcomes"]
