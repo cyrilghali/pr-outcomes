@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from datetime import date, datetime, timedelta, timezone
 
@@ -152,26 +153,66 @@ def build_pr_json(pr, fact) -> dict:
     }
 
 
+def parse_repo(s: str) -> str:
+    if not re.match(r"^[\w.-]+/[\w.-]+$", s):
+        raise argparse.ArgumentTypeError(f"repo must be OWNER/NAME, e.g. tryriot/parrot (got {s!r})")
+    return s
+
+
+def parse_date(s: str) -> date:
+    try:
+        return datetime.strptime(s, "%Y-%m-%d").date()
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"date must be YYYY-MM-DD, e.g. 2026-08-01 (got {s!r})")
+
+
+EPILOG = """\
+Examples:
+  pr-outcomes tryriot/parrot --since 2026-08-01 --until 2026-09-18
+  pr-outcomes tryriot/parrot --group-by depth --repo-path ~/dev/riot/parrot
+  pr-outcomes tryriot/parrot --group-by team
+  pr-outcomes tryriot/parrot --prs | jq '.prs[] | select(.number == 1234)'
+  pr-outcomes tryriot/parrot --since 2026-08-01 --until 2026-09-18 --format table
+
+Exit codes: 0 ok, 1 GitHub/git error, 2 usage error.
+
+A cold first run on a busy repo takes ~20+ minutes (one GraphQL request per
+PR timeline, four in flight at a time). A cached rerun of the same range
+takes ~2 minutes. Run a cold first run in the background.
+"""
+
+
 def parse_args(argv=None):
-    p = argparse.ArgumentParser(prog="pr-outcomes", description="PR review/outcome diagnostics from GitHub's GraphQL API")
-    p.add_argument("repo", help="owner/repo")
-    p.add_argument("--since", type=lambda s: datetime.strptime(s, "%Y-%m-%d").date())
-    p.add_argument("--until", type=lambda s: datetime.strptime(s, "%Y-%m-%d").date())
-    p.add_argument("--base", default=None)
-    p.add_argument("--group-by", choices=["reviewed", "label", "author", "approver", "depth"], default=None)
-    p.add_argument("--fix-window-days", type=int, default=7)
+    p = argparse.ArgumentParser(
+        prog="pr-outcomes",
+        description="PR review/outcome diagnostics from GitHub's GraphQL API",
+        epilog=EPILOG,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    p.add_argument("repo", type=parse_repo, help="owner/repo, e.g. tryriot/parrot")
+    p.add_argument("--since", type=parse_date, help="YYYY-MM-DD. Default: 90 days before --until (or today).")
+    p.add_argument("--until", type=parse_date, help="YYYY-MM-DD. Default: today.")
+    p.add_argument("--base", default=None, help="Base branch to filter merged PRs on. Default: the repo's default branch.")
+    p.add_argument(
+        "--group-by", choices=["reviewed", "label", "author", "approver", "depth"], default=None,
+        help="How to split PRs into groups. Default: one 'all' group.",
+    )
+    p.add_argument(
+        "--fix-window-days", type=int, default=7,
+        help="Days past --until to look for reverts and follow-up fixes. Default: 7.",
+    )
     p.add_argument(
         "--repo-path", default=None,
         help="Local clone for blame-based follow-up-fix attribution (local git only, never fetches). "
-             "Without it, follow-up-fix metrics are null.",
+             "Without it, follow-up-fix metrics are null. Default: none.",
     )
     p.add_argument(
         "--format", choices=["table", "json"], default=None,
         help="Output format. Default: json when stdout is not a TTY, table when it is.",
     )
-    p.add_argument("--json", action="store_true", help="Alias for --format json.")
-    p.add_argument("--prs", action="store_true", help="Include per-PR facts under the 'prs' key (json format only).")
-    p.add_argument("--refresh", action="store_true", help="Bypass the on-disk PR and blame caches.")
+    p.add_argument("--json", action="store_true", help="Alias for --format json. Default: off.")
+    p.add_argument("--prs", action="store_true", help="Include per-PR facts under the 'prs' key (json format only). Default: off.")
+    p.add_argument("--refresh", action="store_true", help="Bypass the on-disk PR and blame caches. Default: off.")
     return p.parse_args(argv)
 
 
@@ -186,12 +227,7 @@ def main(argv=None) -> int:
     since = args.since or (today - timedelta(days=90))
     until = args.until or today
     fmt = "json" if args.json else (args.format or ("json" if not sys.stdout.isatty() else "table"))
-
-    try:
-        owner, name = args.repo.split("/", 1)
-    except ValueError:
-        print("pr-outcomes: repo must be OWNER/NAME", file=sys.stderr)
-        return 2
+    owner, name = args.repo.split("/", 1)  # parse_repo already validated the OWNER/NAME shape
 
     warnings: list[str] = []
     complete_until = until - timedelta(days=args.fix_window_days)

@@ -1,3 +1,4 @@
+import argparse
 import io
 import unittest
 from unittest import mock
@@ -27,6 +28,31 @@ class FormatDefaultTests(unittest.TestCase):
 
     def test_json_flag_wins_even_when_tty(self):
         self.assertEqual(self._fmt(["o/r", "--json"], isatty=True), "json")
+
+
+class RepoValidatorTests(unittest.TestCase):
+    def test_valid_owner_slash_name(self):
+        self.assertEqual(cli.parse_repo("tryriot/parrot"), "tryriot/parrot")
+
+    def test_missing_slash_raises_with_corrected_example(self):
+        with self.assertRaises(argparse.ArgumentTypeError) as ctx:
+            cli.parse_repo("parrot")
+        self.assertIn("tryriot/parrot", str(ctx.exception))
+
+    def test_empty_name_raises(self):
+        with self.assertRaises(argparse.ArgumentTypeError):
+            cli.parse_repo("tryriot/")
+
+
+class DateValidatorTests(unittest.TestCase):
+    def test_valid_date(self):
+        import datetime
+        self.assertEqual(cli.parse_date("2026-08-01"), datetime.date(2026, 8, 1))
+
+    def test_invalid_date_raises_with_corrected_example(self):
+        with self.assertRaises(argparse.ArgumentTypeError) as ctx:
+            cli.parse_date("08/01/2026")
+        self.assertIn("2026-08-01", str(ctx.exception))
 
 
 if __name__ == "__main__":
