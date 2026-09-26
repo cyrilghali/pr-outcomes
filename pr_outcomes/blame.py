@@ -12,7 +12,7 @@ import re
 import subprocess
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from pr_outcomes.fetch import CACHE_ROOT, PR
 from pr_outcomes.metrics import FOLLOWUP_TITLE_RE, LOCKFILES, is_revert_title
@@ -150,19 +150,19 @@ def compute_followup_fixes(
     for sha, number in sha_to_pr.items():
         pr_to_sha.setdefault(number, sha)
 
-    merged_by_number = {pr.number: pr.merged for pr in prs if pr.merged}
+    merged_by_number: dict[int, datetime] = {pr.number: pr.merged for pr in prs if pr.merged}
 
-    candidates: list[tuple[PR, str]] = []
+    candidates: list[tuple[PR, str, datetime]] = []
     for pr in prs:
         if pr.merged is None or is_revert_title(pr.title) or not FOLLOWUP_TITLE_RE.match(pr.title):
             continue
         commit = pr_to_sha.get(pr.number)
         if commit is not None:
-            candidates.append((pr, commit))
+            candidates.append((pr, commit, pr.merged))
 
     introducing_by_commit: dict[str, set[int]] = {}
     to_compute: list[str] = []
-    for _, commit in candidates:
+    for _, commit, _ in candidates:
         if commit in introducing_by_commit or commit in to_compute:
             continue
         cached = None if refresh else _load_cached_blame(owner, name, commit)
@@ -183,12 +183,12 @@ def compute_followup_fixes(
                 _save_cached_blame(owner, name, commit, introducing)
 
     result: dict[int, set[int]] = {}
-    for pr, commit in candidates:
-        matched = set()
+    for pr, commit, merged in candidates:
+        matched: set[int] = set()
         for candidate in introducing_by_commit.get(commit, set()):
             if candidate == pr.number or candidate not in merged_by_number:
                 continue
-            delta = pr.merged - merged_by_number[candidate]
+            delta = merged - merged_by_number[candidate]
             if timedelta(0) <= delta <= timedelta(days=fix_window_days):
                 matched.add(candidate)
         if matched:

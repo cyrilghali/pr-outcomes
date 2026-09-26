@@ -13,8 +13,12 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from datetime import time as time_of_day
+from typing import Any
 
 CACHE_ROOT = os.path.expanduser("~/.cache/pr-outcomes")
+
+# Raw GitHub GraphQL/REST JSON, before normalise_pr turns it into a PR.
+JSON = dict[str, Any]
 
 # GitHub's GraphQL API silently truncates timelineItems (and other nested
 # connections) once a single request resolves more than a handful of PRs'
@@ -106,7 +110,7 @@ def _is_transient_gh_error(stderr: str) -> bool:
     return any(marker in lowered for marker in TRANSIENT_ERROR_MARKERS)
 
 
-def _run_gh_graphql(query: str, variables: dict) -> dict:
+def _run_gh_graphql(query: str, variables: dict[str, Any]) -> JSON:
     args = ["gh", "api", "graphql", "-f", f"query={query}"]
     for key, value in variables.items():
         if value is None:
@@ -149,7 +153,7 @@ def get_default_branch(owner: str, name: str) -> str:
     return ref["name"]
 
 
-def _actor_from_json(raw: dict | None) -> Actor:
+def _actor_from_json(raw: JSON | None) -> Actor:
     if raw is None:
         return Actor(login="ghost", is_bot=False)
     login = raw.get("login", "ghost")
@@ -157,7 +161,7 @@ def _actor_from_json(raw: dict | None) -> Actor:
     return Actor(login=login, is_bot=is_bot)
 
 
-def merge_timeline_into_node(node: dict, timeline_nodes: list[dict]) -> dict:
+def merge_timeline_into_node(node: JSON, timeline_nodes: list[JSON]) -> JSON:
     """Return a copy of `node` with its timelineItems replaced by
     `timeline_nodes`, fetched separately per-PR. Pure so the merge can be
     unit-tested without a network call."""
@@ -166,7 +170,7 @@ def merge_timeline_into_node(node: dict, timeline_nodes: list[dict]) -> dict:
     return merged
 
 
-def normalise_pr(node: dict) -> PR:
+def normalise_pr(node: JSON) -> PR:
     """Turn one raw GraphQL PullRequest node into a PR dataclass. Pure and
     network-free so tests can feed hand-built fixtures through it."""
     author = _actor_from_json(node.get("author"))
@@ -270,7 +274,7 @@ def _cache_path(owner: str, name: str, base: str, frm: date, to: date) -> str:
     )
 
 
-def _warn_truncated_connections(nodes: list[dict], warnings: list[str]) -> None:
+def _warn_truncated_connections(nodes: list[JSON], warnings: list[str]) -> None:
     for n in nodes:
         for key in TRUNCATION_WARNING_KEYS:
             conn = n.get(key) or {}
@@ -282,8 +286,8 @@ def _warn_truncated_connections(nodes: list[dict], warnings: list[str]) -> None:
                 warnings.append(msg)
 
 
-def _fetch_pr_timeline(owner: str, name: str, number: int) -> list[dict]:
-    nodes: list[dict] = []
+def _fetch_pr_timeline(owner: str, name: str, number: int) -> list[JSON]:
+    nodes: list[JSON] = []
     cursor = None
     while True:
         variables = {"owner": owner, "name": name, "number": number, "cursor": cursor}
@@ -297,9 +301,9 @@ def _fetch_pr_timeline(owner: str, name: str, number: int) -> list[dict]:
     return nodes
 
 
-def _fetch_chunk_nodes(owner: str, name: str, base: str, frm: date, to: date, warnings: list[str]) -> list[dict]:
+def _fetch_chunk_nodes(owner: str, name: str, base: str, frm: date, to: date, warnings: list[str]) -> list[JSON]:
     q = f"repo:{owner}/{name} is:pr is:merged base:{base} merged:{frm.isoformat()}..{to.isoformat()}"
-    nodes: list[dict] = []
+    nodes: list[JSON] = []
     cursor = None
     while True:
         variables = {"q": q, "cursor": cursor}
@@ -340,7 +344,7 @@ def _progress(msg: str, verbose: bool) -> None:
 
 def _load_or_fetch_chunk(
     owner: str, name: str, base: str, frm: date, to: date, refresh: bool, warnings: list[str], verbose: bool,
-) -> list[dict]:
+) -> list[JSON]:
     path = _cache_path(owner, name, base, frm, to)
     if not refresh and _chunk_reusable(path, to):
         _progress(f"cache hit {frm}..{to}", verbose)
@@ -379,7 +383,7 @@ def fetch_prs(
     errors always print regardless."""
     today = datetime.now(timezone.utc).date()
     fetch_until = min(until + timedelta(days=fix_window_days), today)
-    all_nodes: list[dict] = []
+    all_nodes: list[JSON] = []
     warnings: list[str] = []
     for frm, to in _week_chunks(since, fetch_until):
         all_nodes.extend(_load_or_fetch_chunk(owner, name, base, frm, to, refresh, warnings, verbose))
@@ -393,7 +397,7 @@ def _teams_cache_path(owner: str, name: str) -> str:
     return os.path.join(CACHE_ROOT, f"{owner}__{name}", "teams.json")
 
 
-def _run_gh_rest_paginate(path: str) -> list[dict]:
+def _run_gh_rest_paginate(path: str) -> list[JSON]:
     proc = subprocess.run(["gh", "api", path, "--paginate"], capture_output=True, text=True)
     if proc.returncode != 0:
         raise GhError(proc.stderr.strip())
@@ -438,7 +442,7 @@ def fetch_org_teams(owner: str, name: str, refresh: bool = False) -> tuple[dict[
     return login_to_teams, warnings
 
 
-def _save_teams_cache(path: str, data: dict) -> None:
+def _save_teams_cache(path: str, data: dict[str, list[str]]) -> None:
     os.makedirs(os.path.dirname(path), exist_ok=True)
     fd, tmp_path = tempfile.mkstemp(dir=os.path.dirname(path))
     try:

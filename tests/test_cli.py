@@ -7,7 +7,7 @@ from datetime import date
 from unittest import mock
 
 from pr_outcomes import cli
-from pr_outcomes.fetch import normalise_pr
+from pr_outcomes.fetch import PR, normalise_pr
 
 FIXTURES = os.path.join(os.path.dirname(__file__), "fixtures", "prs.json")
 with open(FIXTURES) as f:
@@ -24,7 +24,7 @@ def _fixed_today(today: date):
     return _FixedDate
 
 
-def _run_main(argv, prs, teams_by_login=None):
+def _run_main(argv: list[str], prs: list[PR], teams_by_login: dict[str, set[str]] | None = None):
     """Run cli.main() with GitHub/git I/O mocked out; returns (exit_code,
     stdout). teams_by_login, when given, backs fetch.fetch_org_teams."""
     fake_stdout = io.StringIO()

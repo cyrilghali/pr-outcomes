@@ -3,7 +3,7 @@ import os
 import unittest
 from datetime import date
 
-from pr_outcomes.fetch import normalise_pr
+from pr_outcomes.fetch import PR, normalise_pr
 from pr_outcomes import metrics
 
 FIXTURES = os.path.join(os.path.dirname(__file__), "fixtures", "prs.json")
@@ -12,7 +12,7 @@ with open(FIXTURES) as f:
     _RAW = json.load(f)
 
 
-def pr(name):
+def pr(name: str) -> PR:
     return normalise_pr(_RAW[name])
 
 
@@ -161,6 +161,7 @@ class TimeAndAggregateTests(unittest.TestCase):
     def test_time_to_merge(self):
         p = pr("rounds_two")
         hours = metrics._hours(p.created, p.merged)
+        assert hours is not None
         self.assertAlmostEqual(hours, 6.0)
 
     def test_median_p75(self):
@@ -225,12 +226,14 @@ class TimeToMergeFromCreatedTests(unittest.TestCase):
         # from the ready event -- distinct numbers proving each uses its
         # own reference point.
         facts = metrics.compute_all_facts([pr("draft_then_ready")], fix_window_days=7)[240]
+        assert facts.time_to_merge_h is not None
+        assert facts.ready_to_merge_h is not None
         self.assertAlmostEqual(facts.time_to_merge_h, 3.0)
         self.assertAlmostEqual(facts.ready_to_merge_h, 1.0)
 
 
 class TeamGroupTests(unittest.TestCase):
-    def _facts_stub(self, prs):
+    def _facts_stub(self, prs: list[PR]):
         return {p.number: metrics.compute_all_facts([p], fix_window_days=7)[p.number] for p in prs}
 
     def test_groups_by_author_org_team_membership(self):

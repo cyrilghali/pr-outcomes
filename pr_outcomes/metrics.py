@@ -7,10 +7,13 @@ from __future__ import annotations
 import re
 from calendar import monthrange
 from collections import Counter, defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+from collections.abc import Sequence
+from typing import Any
 
-from pr_outcomes.fetch import PR
+from pr_outcomes.fetch import PR, Actor, Event
 
 # Approval-class thresholds, named so the "why" travels with the number.
 RUBBER_STAMP_MIN_SIZE = 200  # below this a fast approval could still be a real read of a tiny diff
@@ -26,7 +29,7 @@ def is_revert_title(title: str) -> bool:
     return title.startswith('Revert "') or bool(REVERT_PREFIX_RE.match(title))
 
 
-def _is_human_reviewer(pr: PR, actor) -> bool:
+def _is_human_reviewer(pr: PR, actor: Actor | None) -> bool:
     return actor is not None and not actor.is_bot and actor.login != pr.author.login
 
 
@@ -45,23 +48,23 @@ class PRFacts:
     size: int
     changed_files: int
     reviewed_group: str
-    approval_classes: dict = field(default_factory=dict)  # login -> class
+    approval_classes: dict[str, str] = field(default_factory=dict)  # login -> class
     is_revert: bool = False
     reverted: bool = False
-    reverted_by: list = field(default_factory=list)
+    reverted_by: list[int] = field(default_factory=list)
     followup_fix: bool | None = False  # None means not computed (no --repo-path)
-    followup_fix_by: list = field(default_factory=list)
-    labels: list = field(default_factory=list)
+    followup_fix_by: list[int] = field(default_factory=list)
+    labels: list[str] = field(default_factory=list)
     author: str = ""
 
 
-def _hours(a, b) -> float | None:
+def _hours(a: datetime | None, b: datetime | None) -> float | None:
     if a is None or b is None:
         return None
     return (b - a).total_seconds() / 3600
 
 
-def _first_event(pr: PR, predicate):
+def _first_event(pr: PR, predicate: Callable[[Event], bool]) -> Event | None:
     for e in pr.events:
         if predicate(e):
             return e
@@ -78,7 +81,7 @@ def compute_review_rounds(pr: PR) -> int:
     return rounds
 
 
-def compute_approval_classes(pr: PR) -> dict:
+def compute_approval_classes(pr: PR) -> dict[str, str]:
     """One class per human non-author approver, keyed by that reviewer's
     first APPROVED review."""
     size = pr.additions + pr.deletions
@@ -87,7 +90,7 @@ def compute_approval_classes(pr: PR) -> dict:
     pushes = sorted(e.at for e in pr.events if e.kind == "push")
 
     for e in pr.events:
-        if e.kind != "review" or e.state != "APPROVED" or not _is_human_reviewer(pr, e.actor):
+        if e.kind != "review" or e.state != "APPROVED" or e.actor is None or not _is_human_reviewer(pr, e.actor):
             continue
         login = e.actor.login
         if login in seen_approvers:
@@ -135,7 +138,7 @@ def compute_reviewed_group(pr: PR) -> str:
     return "no-review"
 
 
-def find_original(revert_pr: PR, prs_by_number: dict) -> PR | None:
+def find_original(revert_pr: PR, prs_by_number: dict[int, PR]) -> PR | None:
     for m in re.finditer(r"#(\d+)", revert_pr.body):
         num = int(m.group(1))
         if num != revert_pr.number and num in prs_by_number:
@@ -156,7 +159,7 @@ def find_original(revert_pr: PR, prs_by_number: dict) -> PR | None:
     return None
 
 
-def compute_reverts(prs: list[PR]) -> dict:
+def compute_reverts(prs: list[PR]) -> dict[int, list[int]]:
     """number -> list of revert PR numbers that reverted it."""
     prs_by_number = {pr.number: pr for pr in prs}
     reverted_by: dict[int, list[int]] = defaultdict(list)
@@ -168,7 +171,7 @@ def compute_reverts(prs: list[PR]) -> dict:
     return dict(reverted_by)
 
 
-def compute_all_facts(prs: list[PR], fix_window_days: int, followup_by_fix: dict[int, set[int]] | None = None) -> dict:
+def compute_all_facts(prs: list[PR], fix_window_days: int, followup_by_fix: dict[int, set[int]] | None = None) -> dict[int, PRFacts]:
     """Per-PR facts for the whole fetched set (needed because reverts and
     follow-up fixes can land after --until). `followup_by_fix` is the
     fix-PR -> introducing-PRs mapping from `blame.compute_followup_fixes`;
@@ -183,13 +186,13 @@ def compute_all_facts(prs: list[PR], fix_window_days: int, followup_by_fix: dict
             for introducing_number in introducing_numbers:
                 followups_by_introducing[introducing_number].append(fix_number)
 
-    facts = {}
+    facts: dict[int, PRFacts] = {}
     for pr in prs:
         followups = followups_by_introducing.get(pr.number, [])
         facts[pr.number] = PRFacts(
             number=pr.number,
             time_to_first_human_review_h=_hours(pr.created, _first_event_time(pr, lambda e: e.kind in ("review", "comment") and _is_human_reviewer(pr, e.actor))),
-            time_to_first_bot_review_h=_hours(pr.created, _first_event_time(pr, lambda e: e.kind in ("review", "comment") and e.actor and e.actor.is_bot)),
+            time_to_first_bot_review_h=_hours(pr.created, _first_event_time(pr, lambda e: e.kind in ("review", "comment") and e.actor is not None and e.actor.is_bot)),
             time_to_first_approval_h=_hours(pr.created, _first_event_time(pr, lambda e: e.kind == "review" and e.state == "APPROVED" and _is_human_reviewer(pr, e.actor))),
             time_to_merge_h=_hours(pr.created, pr.merged),
             ready_to_merge_h=_hours(pr.ready, pr.merged),
@@ -212,7 +215,7 @@ def compute_all_facts(prs: list[PR], fix_window_days: int, followup_by_fix: dict
     return facts
 
 
-def _first_event_time(pr: PR, predicate):
+def _first_event_time(pr: PR, predicate: Callable[[Event], bool]) -> datetime | None:
     e = _first_event(pr, predicate)
     return e.at if e else None
 
@@ -294,10 +297,10 @@ def in_report_window(prs: list[PR], since: date, until: date) -> list[PR]:
 
 
 def group_prs(
-    prs: list[PR], facts: dict, group_by: str | None,
+    prs: list[PR], facts: dict[int, PRFacts], group_by: str | None,
     teams_by_login: dict[str, set[str]] | None = None, selected_teams: set[str] | None = None,
     since: date | None = None, until: date | None = None,
-) -> dict:
+) -> dict[str, list[PR]]:
     groups: dict[str, list[PR]] = defaultdict(list)
     if group_by is None:
         groups["all"] = list(prs)
@@ -362,7 +365,7 @@ def group_prs(
 
 # --- Aggregation ----------------------------------------------------------
 
-def percentile(values: list[float], pct: float) -> float | None:
+def percentile(values: Sequence[float], pct: float) -> float | None:
     if not values:
         return None
     s = sorted(values)
@@ -375,14 +378,14 @@ def percentile(values: list[float], pct: float) -> float | None:
     return s[lo] + (s[hi] - s[lo]) * (k - lo)
 
 
-def _median_p75(values: list[float]) -> tuple[float | None, float | None]:
+def _median_p75(values: Sequence[float | None]) -> tuple[float | None, float | None]:
     clean = [v for v in values if v is not None]
     med = percentile(clean, 0.5)
     p75 = percentile(clean, 0.75)
     return (round(med, 1) if med is not None else None, round(p75, 1) if p75 is not None else None)
 
 
-def _mean(values: list[float]) -> float | None:
+def _mean(values: Sequence[float]) -> float | None:
     clean = [v for v in values if v is not None]
     if not clean:
         return None
@@ -395,12 +398,12 @@ def _share(numerator: int, denominator: int) -> float | None:
     return round(numerator / denominator, 3)
 
 
-def aggregate_group(prs: list[PR], facts: dict, since: date, until: date) -> dict:
+def aggregate_group(prs: list[PR], facts: dict[int, PRFacts], since: date, until: date) -> dict[str, Any]:
     group_facts = [facts[pr.number] for pr in prs]
     non_revert = [f for f in group_facts if not f.is_revert]
     n_non_revert = len(non_revert)
 
-    out: dict = {"count": len(prs)}
+    out: dict[str, Any] = {"count": len(prs)}
 
     # Outcomes
     reverted_count = sum(1 for f in non_revert if f.reverted)
@@ -445,7 +448,7 @@ def aggregate_group(prs: list[PR], facts: dict, since: date, until: date) -> dic
 
     weeks = max(((until - since).days + 1) / 7, 1 / 7)
     out["throughput_per_week"] = round(len(prs) / weeks, 2)
-    week_counts: Counter = Counter()
+    week_counts: Counter[str] = Counter()
     for pr in prs:
         if pr.merged:
             iso = pr.merged.isocalendar()

@@ -83,7 +83,7 @@ if __name__ == "__main__":
 
 
 class RunGhGraphqlRetryTests(unittest.TestCase):
-    def _run(self, stderrs):
+    def _run(self, stderrs: list[str]):
         results = [subprocess.CompletedProcess([], 1, "", e) for e in stderrs]
         with mock.patch.object(fetch.subprocess, "run", side_effect=results) as run, \
                 mock.patch.object(fetch.time, "sleep") as sleep:
@@ -102,7 +102,7 @@ class RunGhGraphqlRetryTests(unittest.TestCase):
 
 
 class FetchOrgTeamsTests(unittest.TestCase):
-    def _with_cache_root(self, tmp):
+    def _with_cache_root(self, tmp: str):
         return mock.patch.object(fetch, "CACHE_ROOT", tmp)
 
     def test_builds_login_to_teams_map_from_two_teams(self):

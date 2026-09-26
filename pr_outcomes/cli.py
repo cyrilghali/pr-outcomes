@@ -7,6 +7,7 @@ import json
 import re
 import sys
 from datetime import date, datetime, timedelta, timezone
+from typing import Any
 
 from pr_outcomes import blame, fetch, metrics
 
@@ -73,7 +74,7 @@ SPEED_ROWS = [
 ]
 
 
-def _fmt(value) -> str:
+def _fmt(value: Any) -> str:
     if value is None:
         return "-"
     if isinstance(value, float):
@@ -81,7 +82,7 @@ def _fmt(value) -> str:
     return str(value)
 
 
-def _fmt_share(value) -> str:
+def _fmt_share(value: float | None) -> str:
     return "-" if value is None else f"{value * 100:.1f}%"
 
 
@@ -92,21 +93,21 @@ SHARE_KEYS = {
 }
 
 
-def render_table(groups: dict) -> str:
+def render_table(groups: dict[str, dict[str, Any]]) -> str:
     names = list(groups.keys())
     col_width = max([len(n) for n in names] + [12]) + 2
     label_width = max(len(label) for _, label in OUTCOMES_ROWS + REVIEW_DEPTH_ROWS + SPEED_ROWS) + 2
 
     lines = []
 
-    def header(label):
+    def header(label: str) -> str:
         return label.ljust(label_width) + "".join(n.rjust(col_width) for n in names)
 
     lines.append(header(""))
     lines.append("PR count".ljust(label_width) + "".join(str(groups[n]["count"]).rjust(col_width) for n in names))
     lines.append("")
 
-    def section(title, rows):
+    def section(title: str, rows: list[tuple[str, str]]) -> None:
         lines.append(f"-- {title} --")
         for key, label in rows:
             values = []
@@ -123,7 +124,7 @@ def render_table(groups: dict) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
-def build_pr_json(pr, fact) -> dict:
+def build_pr_json(pr: fetch.PR, fact: metrics.PRFacts) -> dict[str, Any]:
     return {
         "number": pr.number,
         "title": pr.title,
@@ -211,7 +212,7 @@ takes ~2 minutes. Run a cold first run in the background.
 """
 
 
-def parse_args(argv=None):
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(
         prog="pr-outcomes",
         description="PR review/outcome diagnostics from GitHub's GraphQL API",
@@ -291,7 +292,7 @@ def gh_error_hint(stderr: str) -> str:
     return "run `gh auth status`, or retry -- finished weeks stay cached"
 
 
-def main(argv=None) -> int:
+def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     today = date.today()
     since, until = args.since, args.until
@@ -320,7 +321,8 @@ def main(argv=None) -> int:
     if args.verbose or sys.stderr.isatty():
         print(f"pr-outcomes: base={base} since={since} until={until}", file=sys.stderr)
 
-    teams_by_login, selected_teams = None, None
+    teams_by_login: dict[str, set[str]] = {}
+    selected_teams: set[str] | None = None
     if args.group_by == "team" or args.team:
         if args.group_by == "team":
             _warn(
