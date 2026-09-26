@@ -112,10 +112,11 @@ one team's trend over time (`--team sonar --group-by week`).
 
 Two warnings are period-specific and only fire for `week`/`month`: a period
 that starts before `--since` or ends after `--until` is partial, since only
-PRs merged inside `[--since, --until]` are counted for it; a period inside
-the last `--fix-window-days` days before `--until` has had less time than
-the fix window for reverts and follow-up fixes to land, same as the
-top-level truncation warning, but scoped to that one period.
+PRs merged inside `[--since, --until]` are counted for it; a period whose
+end (clipped to `--until`) is within the last `--fix-window-days` days
+before today has had less time than the fix window for reverts and
+follow-up fixes to land, the same rule as the top-level truncation warning,
+but scoped to that one period.
 
 ## Metrics
 

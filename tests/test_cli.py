@@ -14,6 +14,16 @@ with open(FIXTURES) as f:
     _RAW = json.load(f)
 
 
+def _fixed_today(today: date):
+    """A date subclass whose .today() is pinned, for tests that need
+    cli.py's `date.today()` calls to be deterministic."""
+    class _FixedDate(date):
+        @classmethod
+        def today(cls):
+            return today
+    return _FixedDate
+
+
 def _run_main(argv, prs, teams_by_login=None):
     """Run cli.main() with GitHub/git I/O mocked out; returns (exit_code,
     stdout). teams_by_login, when given, backs fetch.fetch_org_teams."""
@@ -195,18 +205,38 @@ class PeriodGroupWarningTests(unittest.TestCase):
         payload = json.loads(out)
         self.assertTrue(any("is partial" in w for w in payload["warnings"]))
 
-    def test_period_near_until_warns_truncated_fix_window(self):
+    def test_period_near_today_warns_truncated_fix_window(self):
         # rounds_two's week (2025-12-29 - 2026-01-04) is fully inside
-        # [--since, --until], but its last day is inside the last
-        # --fix-window-days days before --until (2026-01-03).
+        # [--since, --until]. With "today" mocked to 2026-01-10, the fetch
+        # cutoff for reverts/fixes is capped at today, and this week's end
+        # (2026-01-04) is within the last --fix-window-days (7) days before
+        # that today (2026-01-03) -- a genuine truncation.
         pr = normalise_pr(_RAW["rounds_two"])  # merges 2026-01-01
-        _, out = _run_main(
-            ["o/r", "--since", "2025-12-01", "--until", "2026-01-10", "--fix-window-days", "7",
-             "--format", "json", "--group-by", "week"],
-            [pr],
-        )
+        with mock.patch.object(cli, "date", _fixed_today(date(2026, 1, 10))):
+            _, out = _run_main(
+                ["o/r", "--since", "2025-12-01", "--until", "2026-01-04", "--fix-window-days", "7",
+                 "--format", "json", "--group-by", "week"],
+                [pr],
+            )
         payload = json.loads(out)
         self.assertTrue(any("fewer than --fix-window-days" in w for w in payload["warnings"]))
+
+    def test_period_near_until_but_far_from_today_does_not_warn(self):
+        # Same since/until/week as above (period_end 2026-01-04 is within
+        # --fix-window-days of --until 2026-01-04), but "today" is mocked far
+        # in the future (2026-06-01): the fetch cutoff already covers this
+        # week's fix window in full, so it must not warn -- the bug this
+        # guards against warned on proximity to --until alone, regardless of
+        # today.
+        pr = normalise_pr(_RAW["rounds_two"])
+        with mock.patch.object(cli, "date", _fixed_today(date(2026, 6, 1))):
+            _, out = _run_main(
+                ["o/r", "--since", "2025-12-01", "--until", "2026-01-04", "--fix-window-days", "7",
+                 "--format", "json", "--group-by", "week"],
+                [pr],
+            )
+        payload = json.loads(out)
+        self.assertFalse(any("fewer than --fix-window-days" in w for w in payload["warnings"]))
 
     def test_groups_stay_chronological_in_json(self):
         jan_pr = normalise_pr(_RAW["rounds_two"])  # 2026-01

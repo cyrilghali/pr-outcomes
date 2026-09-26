@@ -386,7 +386,7 @@ def main(argv=None) -> int:
                     f"period {label} is partial: only PRs merged in [{since}, {until}] count",
                     warnings,
                 )
-            elif period_end > complete_until:
+            elif min(period_end, until) > today - timedelta(days=args.fix_window_days):
                 _warn(
                     f"period {label} has fewer than --fix-window-days ({args.fix_window_days}) days "
                     f"to be reverted or fixed as of today ({today})",
