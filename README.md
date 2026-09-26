@@ -97,10 +97,10 @@ tool prints one warning per affected PR to stderr (and into the JSON
 Team membership comes from the GitHub org, not the repo: `gh api
 orgs/<owner>/teams` plus each team's `members` endpoint (read-only, cached
 and refetched daily). An author on no selected team, or on none at all,
-lands in `(none)`; if the repo's owner is a user account rather than an org,
-the teams API 404s and every PR falls back to `(none)`, with a warning
-either way. Membership reflects today, not the PR's merge date, and the tool
-always warns about that when `--group-by team` is used.
+lands in `(none)`, with no warning. If the repo's owner is a user account
+rather than an org, the teams API 404s and every PR falls back to `(none)`,
+with a warning. Membership reflects today, not the PR's merge date, and the
+tool always warns about that when `--group-by team` is used.
 
 ## Metrics
 

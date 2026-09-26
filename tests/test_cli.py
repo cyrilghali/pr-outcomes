@@ -138,6 +138,50 @@ class TeamFilterTests(unittest.TestCase):
         self.assertTrue(any("--teams only applies" in w for w in payload["warnings"]))
 
 
+class JsonPayloadContractTests(unittest.TestCase):
+    ARGV = ["o/r", "--since", "2026-01-01", "--until", "2026-01-31", "--format", "json"]
+
+    def test_every_group_key_has_a_definition(self):
+        pr = normalise_pr(_RAW["rounds_two"])
+        code, out = _run_main(self.ARGV, [pr])
+        self.assertEqual(code, 0)
+        payload = json.loads(out)
+        for group in payload["groups"].values():
+            for key in group:
+                self.assertIn(key, payload["definitions"], f"{key!r} has no definition")
+
+    def test_warnings_present_when_followup_fix_is_null(self):
+        pr = normalise_pr(_RAW["rounds_two"])
+        _, out = _run_main(self.ARGV, [pr])  # no --repo-path
+        payload = json.loads(out)
+        self.assertTrue(any("--repo-path" in w for w in payload["warnings"]))
+        for group in payload["groups"].values():
+            self.assertIsNone(group["followup_fix_rate"])
+
+    def test_no_prs_key_without_the_prs_flag(self):
+        pr = normalise_pr(_RAW["rounds_two"])
+        _, out = _run_main(self.ARGV, [pr])
+        payload = json.loads(out)
+        self.assertNotIn("prs", payload)
+
+    def test_prs_key_present_with_the_prs_flag(self):
+        pr = normalise_pr(_RAW["rounds_two"])
+        _, out = _run_main(self.ARGV + ["--prs"], [pr])
+        payload = json.loads(out)
+        self.assertIn("prs", payload)
+
+
+class NonexistentRepoTests(unittest.TestCase):
+    def test_base_given_still_resolves_the_repo_and_fails_1(self):
+        fake_stdout = io.StringIO()
+        fake_stdout.isatty = lambda: False
+        with mock.patch.object(
+            cli.fetch, "get_default_branch", side_effect=cli.fetch.GhError("Could not resolve to a Repository"),
+        ), mock.patch.object(cli.sys, "stdout", fake_stdout):
+            code = cli.main(["o/r", "--base", "staging"])
+        self.assertEqual(code, 1)
+
+
 class GhErrorHintTests(unittest.TestCase):
     def test_auth_problem(self):
         self.assertIn("gh auth status", cli.gh_error_hint("HTTP 401: Bad credentials"))

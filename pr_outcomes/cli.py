@@ -252,8 +252,12 @@ def parse_args(argv=None):
         help="Output format. Default: json when stdout is not a TTY, table when it is.",
     )
     p.add_argument("--json", action="store_true", help="Alias for --format json. Default: off.")
-    p.add_argument("--prs", action="store_true", help="Include per-PR facts under the 'prs' key (json format only). Default: off.")
-    p.add_argument("--refresh", action="store_true", help="Bypass the on-disk PR and blame caches. Default: off.")
+    p.add_argument(
+        "--prs", action="store_true",
+        help="Include per-PR facts (json: under the 'prs' key; table: a JSON block printed after the table). "
+             "Default: off.",
+    )
+    p.add_argument("--refresh", action="store_true", help="Bypass the on-disk PR, blame, and team caches. Default: off.")
     p.add_argument(
         "--verbose", action="store_true",
         help="Print progress lines (cache hit / fetching) even when stderr isn't a TTY. Default: off.",
@@ -300,7 +304,11 @@ def main(argv=None) -> int:
         )
 
     try:
-        base = args.base or fetch.get_default_branch(owner, name)
+        # Always resolve the repo, even with --base given, so a nonexistent
+        # repo/owner fails here with the not-found hint instead of silently
+        # returning zero PRs from the (never-run) search below.
+        default_branch = fetch.get_default_branch(owner, name)
+        base = args.base or default_branch
         if args.verbose or sys.stderr.isatty():
             print(f"pr-outcomes: base={base} since={since} until={until}", file=sys.stderr)
         all_prs, fetch_warnings = fetch.fetch_prs(
@@ -382,7 +390,7 @@ def main(argv=None) -> int:
             "fix_window_days": args.fix_window_days,
             "complete_until": complete_until.isoformat(),
             "warnings": warnings,
-            "definitions": {k: DEFINITIONS[k] for k in used_keys if k in DEFINITIONS},
+            "definitions": {k: v for k, v in DEFINITIONS.items() if k in used_keys},
             "groups": groups,
         }
         if args.prs:
