@@ -1,251 +1,214 @@
 # pr-outcomes
 
-Command-line diagnostics for how a GitHub repo's pull requests get reviewed
-and merged. It reads GitHub's GraphQL API through `gh`, and never writes
-anything to GitHub.
+![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)
+![No dependencies](https://img.shields.io/badge/dependencies-none-brightgreen)
+![Read-only](https://img.shields.io/badge/GitHub-read--only-lightgrey?logo=github)
 
-## Install
+**Does code review on your repo change the code, and do the PRs it lets through hold up?**
 
-Requires Python 3.12+ and the [`gh` CLI](https://cli.github.com/), already
-logged in (`gh auth status`).
+`pr-outcomes` answers that from a repo's merged pull requests. For each PR it records how it was reviewed (real back-and-forth, a silent approval, a rubber stamp), how fast it moved, and what happened after merge: was it reverted, or did a later fix change its lines?
+
+It reads GitHub through the `gh` CLI and never writes anything.
+
+## What does the output look like?
+
+Every PR merged into `cli/cli`'s default branch between 1 August and 15 September 2026, split by how deep the review went:
 
 ```
+$ pr-outcomes cli/cli --since 2026-08-01 --until 2026-09-15 --group-by depth --repo-path ~/src/cli
+
+                                               light-review  no-human-approval  changed-by-review
+PR count                                                105                 15                 12
+
+-- Outcomes --
+Revert rate                                            1.9%               0.0%               0.0%
+Follow-up fix rate                                     1.0%               6.7%               0.0%
+
+-- Review depth --
+Approvals: changed by review                           0.0%                  -              85.7%
+Approvals: commented                                  11.4%                  -               0.0%
+Approvals: silent                                     85.1%                  -              14.3%
+Approvals: rubber-stamp                                3.5%                  -               0.0%
+Review rounds (mean)                                   0.21                  0               1.75
+PRs with >=1 round                                    17.1%               0.0%             100.0%
+Human comments (mean)                                  0.63                  0               9.58
+Bot comments (mean)                                     1.7                3.6               2.42
+
+-- Speed --
+Time to first human review, h (median)                  7.7                  -               71.2
+Time to first approval, h (median)                     12.4                  -              162.1
+Time to merge, h (median)                              16.8                0.6              195.2
+Merged within 24h                                     60.0%             100.0%               8.3%
+Throughput / week                                     15.98               2.28               1.83
+Size, lines (median)                                     18                 90                286
+```
+
+*Rows trimmed. The full table also has p75 timings, time to first bot review, merged within 1h, and [Cubic](https://www.cubic.dev/) review scores.*
+
+Only 12 of 132 PRs had a review that visibly changed the code. Those PRs were large (286 lines at the median) and took about eight days to merge. The 15 PRs merged with no human approval took 36 minutes at the median, and they have the highest follow-up fix rate.
+
+Group by week and the same metrics become a trend:
+
+```
+$ pr-outcomes cli/cli --since 2026-08-01 --until 2026-09-15 --group-by week --repo-path ~/src/cli
+
+                          2026-W31  2026-W32  2026-W33  2026-W34  2026-W35  2026-W36  2026-W37  2026-W38
+PR count                         1        27        13        15        18        24        22        12
+
+-- Outcomes --
+Revert rate                   0.0%      0.0%      0.0%      7.1%      0.0%      0.0%      0.0%      9.1%
+Follow-up fix rate            0.0%      0.0%      7.7%      0.0%      0.0%      4.2%      0.0%      0.0%
+...
+```
+
+## How do I install it?
+
+You need Python 3.12+ and the [`gh` CLI](https://cli.github.com/), logged in (`gh auth status`).
+
+```sh
+git clone https://github.com/cyrilghali/pr-outcomes && cd pr-outcomes
 uv tool install -e .
 ```
 
-## For agents
+The first run on a busy repo is slow, because each PR's timeline needs its own request (see [Why is the first run slow?](#why-is-the-first-run-slow)). The 132 PRs above took under two minutes. A repo with thousands of PRs can take 20+ minutes cold, and about 2 minutes once cached.
 
-Output is JSON by default whenever stdout isn't a TTY (a pipe, a captured
-subprocess output), and a human-readable table when it is; `--format
-table|json` picks explicitly, and `--json` is a shorthand for `--format
-json`. The default JSON payload stays small (a few KB): pass `--prs` to also
-get per-PR facts under `"prs"`. Every metric key in `"groups"` has a one-line
-explanation with its unit under `"definitions"`, so a payload is
-self-describing without this README. A `"warnings"` array names anything
-that makes a metric null or a window shorter than expected (e.g. follow-up
-fixes need `--repo-path`, a truncated GitHub connection, a truncated
-revert/fix window); every warning is also printed to stderr.
+## How do I use it?
 
-The exit code is `0` on success, `1` on a GitHub or git error (gh/git's own
-stderr plus one corrective line: `gh auth status` for auth, spelling/access
-for not-found, retry later for rate limits), and `2` on a usage error (bad
-flags, a malformed repo or date). Progress lines (`cache hit`, `fetching`)
-print only when stderr is a TTY or `--verbose` is passed, so piped stderr
-stays limited to warnings and errors.
-
-A cold first run on a busy repo takes ~20+ minutes: GitHub's GraphQL API
-forces one request per PR's timeline (see below), fetched four at a time. A
-cached rerun of the same range takes ~2 minutes. Run the first cold run in
-the background, or in the foreground with a generous timeout.
-
-## Usage
-
-```
-pr-outcomes tryriot/parrot --since 2026-08-01
-pr-outcomes tryriot/parrot --since 2026-08-01 --group-by reviewed
-pr-outcomes tryriot/parrot --group-by depth --repo-path ~/dev/riot/parrot
-pr-outcomes tryriot/parrot --group-by team --teams awareness,inbox,platform,simulation,sonar
-pr-outcomes tryriot/parrot --team sonar --group-by author
-pr-outcomes tryriot/parrot --group-by size
-pr-outcomes tryriot/parrot --team sonar --group-by week
-pr-outcomes tryriot/parrot --prs | jq '.prs[] | select(.number == 1234)'
+```sh
+pr-outcomes OWNER/REPO                                            # last 90 days, one "all" group
+pr-outcomes OWNER/REPO --since 2026-08-01 --group-by size
+pr-outcomes OWNER/REPO --group-by depth --repo-path ~/src/repo    # adds follow-up-fix metrics
+pr-outcomes OWNER/REPO --team backend --group-by week             # one team's trend
+pr-outcomes OWNER/REPO --prs | jq '.prs[] | select(.number == 1234)'
 ```
 
-```
-pr-outcomes OWNER/REPO [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--base BRANCH]
-            [--group-by reviewed|label|author|approver|depth|team|size|week|month] [--teams SLUG,...] [--team SLUG]
-            [--fix-window-days 7] [--repo-path PATH]
-            [--format table|json] [--json] [--prs] [--refresh] [--verbose]
-```
+`--repo-path` points at a local clone. Only the follow-up-fix metrics need it, and the tool only reads it: no fetch, no writes.
 
-Run `pr-outcomes --help` for every flag's default and an `Examples:` block.
+<details>
+<summary><b>All flags</b></summary>
 
-| Flag | Default | Notes |
+| Flag | Default | What it does |
 |---|---|---|
-| `--since` | 90 days before `--until` | |
-| `--until` | today | |
-| `--base` | repo's default branch | On `tryriot/parrot` this is `staging`, so the "Deploy to production" PRs based on `production` are excluded. |
-| `--group-by` | none (one "all" group) | `reviewed`, `label`, `author`, `approver`, `depth`, `team`, `size`, `week`, or `month`. Label, approver, and team groups can overlap: a PR with two labels, or an author on two teams, counts in both. A PR with none lands in a `(none)` group. `size` buckets additions+deletions: `xs` (<100), `s` (100-299), `m` (300-699), `l` (700+), always shown in that order. `week`/`month` bucket by the merge date's ISO week (`2026-W32`) or calendar month (`2026-08`), always shown chronologically, including a period with zero PRs (count 0, other metrics null) so a quiet period doesn't vanish from a trend; combine with `--team` for one team's trend over time. |
-| `--teams` | every team the author belongs to | Comma-separated GitHub org team slugs, only used with `--group-by team`, e.g. `awareness,inbox,platform,simulation,sonar`. Given without `--group-by team`, it's ignored with a warning. |
-| `--team` | none | Keep only PRs authored by a member of this single GitHub org team slug, e.g. `sonar`. Combines with any `--group-by` (`--team sonar --group-by author`). Reuses the same cached membership as `--group-by team`. An unknown slug exits 2 and lists the valid ones. |
-| `--fix-window-days` | 7 | How many days past `--until` to look for reverts and follow-up fixes. PRs merged in the last `--fix-window-days` days before `--until` have a truncated real window, since the fetch range is capped at today: for a baseline measurement, pick an `--until` at least that far in the past. |
-| `--repo-path` | none | Local clone to blame-attribute follow-up fixes against (see below). Only local git commands are run; the clone is never fetched or written to. Without it, follow-up-fix metrics are null (`-` in the table, `null` in JSON). |
-| `--format` | `json` when piped, `table` when a TTY | `--json` is a shorthand for `--format json`. |
-| `--prs` | off | Include per-PR facts (JSON: under `"prs"`; table: a JSON block printed after the table). |
-| `--refresh` | off | Bypass the on-disk PR, blame, and team caches. |
-| `--verbose` | off | Print progress lines (`cache hit` / `fetching`) even when stderr isn't a TTY. |
+| `--since` | 90 days before `--until` | Start of the merge window. |
+| `--until` | today | End of the merge window. |
+| `--base` | repo's default branch | Count only PRs merged into this branch. |
+| `--group-by` | one `all` group | `reviewed`, `label`, `author`, `approver`, `depth`, `team`, `size`, `week`, `month`. See below. |
+| `--teams` | every team of the author | Comma-separated org team slugs, used with `--group-by team`. |
+| `--team` | none | Keep only PRs whose author is on this org team. Works with any `--group-by`. An unknown slug exits 2 and lists the valid ones. |
+| `--fix-window-days` | 7 | Days past `--until` to keep looking for reverts and follow-up fixes. |
+| `--repo-path` | none | Local clone for blame-based follow-up-fix attribution. Without it those metrics are null. |
+| `--format` | `table` on a TTY, `json` otherwise | `--json` is short for `--format json`. |
+| `--prs` | off | Add per-PR facts (JSON under `"prs"`; after the table in table mode). |
+| `--refresh` | off | Ignore the PR, blame and team caches. |
+| `--verbose` | off | Print progress lines even when stderr isn't a TTY. |
 
-The cache lives at `~/.cache/pr-outcomes/`. Older weekly chunks are cached
-forever, and only the current week is refetched, so a second run against the
-same range is fast. Blame attribution is cached per commit sha under
-`blame/<sha>.json`, since a fix PR's attribution depends only on that commit
-and never changes; uncached commits are blamed in parallel. Org team
-membership is cached at `<owner>__<repo>/teams.json`, refetched once a day or
-on `--refresh`.
+**Groups.** `label`, `approver` and `team` can overlap: a PR with two labels counts in both, and a PR with none lands in `(none)`. `size` buckets additions + deletions into `xs` (<100), `s` (100–299), `m` (300–699) and `l` (700+). `week` and `month` bucket by merge date in chronological order, and keep empty periods so a quiet week doesn't vanish from a trend.
 
-GitHub's GraphQL API silently truncates a PR's timeline (commits, force
-pushes, ready-for-review, review-requested) when one request resolves
-timelines for more than a handful of PRs, with no signal in the response that
-it happened. To avoid that, each PR's timeline is fetched in its own request,
-after the search page that lists the PRs; the fetches run four at a time.
-Other connections (reviews, comments, review threads) are still fetched
-inside the search query. If GitHub truncates one of those too, the
-tool prints one warning per affected PR to stderr (and into the JSON
-`"warnings"` array) instead of silently under-counting.
+**Teams** come from the GitHub org (`orgs/<owner>/teams`), cached for a day. Membership is today's, not the membership at merge time, and the tool warns about this. A user-owned repo has no teams, so every PR lands in `(none)` with a warning.
 
-### `--group-by team`
+**Recent PRs** have had less time to be reverted or fixed. For a baseline, pick an `--until` at least `--fix-window-days` in the past. The tool warns when a window or a week/month period is cut short.
 
-Team membership comes from the GitHub org, not the repo: `gh api
-orgs/<owner>/teams` plus each team's `members` endpoint (read-only, cached
-and refetched daily). An author on no selected team, or on none at all,
-lands in `(none)`, with no warning. If the repo's owner is a user account
-rather than an org, the teams API 404s and every PR falls back to `(none)`,
-with a warning. Membership reflects today, not the PR's merge date, and the
-tool always warns about that when `--group-by team` is used.
+</details>
 
-### `--group-by week|month`
+## What does each metric mean?
 
-Buckets PRs by the ISO week (`2026-W32`) or calendar month (`2026-08`) of
-their merge date, and reports each period in chronological order, so it can
-be read as a trend rather than a single number. Combine with `--team` to see
-one team's trend over time (`--team sonar --group-by week`).
+Each metric is computed per PR, then summarised per group as a median, p75, mean or share. A PR counts if it merged inside `[--since, --until]`.
 
-Two warnings are period-specific and only fire for `week`/`month`: a period
-that starts before `--since` or ends after `--until` is partial, since only
-PRs merged inside `[--since, --until]` are counted for it; a period whose
-end (clipped to `--until`) is within the last `--fix-window-days` days
-before today has had less time than the fix window for reverts and
-follow-up fixes to land, the same rule as the top-level truncation warning,
-but scoped to that one period.
+### Did the PR hold up after merge?
 
-## Metrics
-
-Every metric is computed per PR first, then aggregated per group as a
-median, p75, mean, or share. A PR counts toward a group only if it merged
-inside `[--since, --until]`. Reverts and follow-up fixes are the exception:
-they are detected up to `--fix-window-days` days after `--until`, so one
-landing just after the window still counts.
-
-### Outcomes
-
-| Metric | Definition |
+| Metric | Meaning |
 |---|---|
-| `revert_rate` | The share of PRs later reverted by another PR. A revert is GitHub's revert button or a `revert`-prefixed title, matched back to the original by issue reference, URL, an exact `Revert "<title>"` quote, or (failing those) the original's title appearing as a substring anywhere in the revert PR's title. The denominator excludes revert PRs themselves. |
-| `followup_fix_rate` | The share of PRs later blamed as having introduced a bug that a fix PR corrected, within the fix window. Requires `--repo-path`; without it this metric is null. |
+| Revert rate | Share of PRs later reverted by another PR. A revert is GitHub's revert button or a title starting with `revert`, matched back to the original by issue reference, URL or title. Revert PRs themselves are left out. |
+| Follow-up fix rate | Share of PRs whose lines a later fix PR changed, within the fix window. Needs `--repo-path`. |
 
-Follow-up fixes are found by blame attribution, SZZ-style, not file overlap.
-For every merged PR whose title starts with `fix`, `hotfix`, or `bugfix` as
-a whole word, case-insensitive (`fix:`, `fix(scope): ...`, `Fix crash`,
-`hotfix: ...`, `bugfix: ...`, but not `fixture: ...`) and that is not a
-revert, we diff its merge commit against its parent, take the old-side line
-ranges it changed or deleted (a pure addition carries no blame), and run
-`git blame` on those ranges in the parent commit. Each blamed commit is
-mapped back to the PR that merged it, using `git log --first-parent`, and
-that PR counts as followed up by the fix if it merged no later than the fix
-and within `--fix-window-days` of it. Lockfiles are excluded.
+Follow-up fixes use blame attribution, the [SZZ](https://www.st.cs.uni-saarland.de/papers/msr2005/) approach. For every PR whose title starts with `fix`, `hotfix` or `bugfix` (`fix:`, `Fix crash`, but not `fixture:`), the tool finds the old lines the fix changed or deleted and runs `git blame` on them. Each PR that last touched those lines, and merged up to `--fix-window-days` before the fix, counts as followed up. Lockfiles are ignored.
 
-A fix whose diff only adds lines is not attributed to anything, since there
-are no old lines to blame. A fix whose title doesn't start with `fix`,
-`hotfix`, or `bugfix` is missed entirely. Only local git history is read,
-never GitHub state, so this needs a local clone passed through
-`--repo-path`.
+### Did the review change anything?
 
-### Review depth
-
-A push, wherever it's used below, is each commit's commit date plus each
-force-push event's timestamp.
-
-For each human non-author approver, we classify their first `APPROVED`
-review. "Commented" means the reviewer left, at or before that approval, a
-non-approval review with a body or inline comments, a review-thread comment,
-or an issue comment, or inline comments attached to the approval review
-itself. The approval review's own body text ("LGTM", a thumbs-up) does not
-count on its own, since it never prompted a re-look.
+Each human approval from someone other than the author falls into one class:
 
 | Class | Meaning |
 |---|---|
-| `changed_by_review` | The reviewer left a comment, the author pushed a change, then that reviewer approved: a push strictly between their first comment and their approval. The one class where we can see the review changed the code. |
-| `commented` | They commented, but no push landed between that comment and their approval (including a comment and approval submitted together, even if a rebase follows before merge). |
-| `rubber_stamp` | No comment, the diff is 200+ lines, and the approval landed under 5 minutes after the PR was ready, last pushed to, or requested from them. Too fast to have been read. |
-| `silent` | Every other no-comment approval. We cannot tell if it was a real review, so we do not guess. |
+| **changed by review** | The reviewer commented, the author pushed, then the reviewer approved. The only case where you can see the review changed the code. |
+| **commented** | The reviewer commented, but nothing was pushed between that comment and the approval. |
+| **rubber-stamp** | No comment, a diff of 200+ lines, and an approval under 5 minutes after the PR was ready, pushed or requested. Too fast to have been read. |
+| **silent** | Any other approval without a comment. It may have been a real review; the tool doesn't guess. |
 
-A higher `changed_by_review` share is not better in itself: it matters most on
-large or risky PRs, and it must not become a target, since a reviewer can
-game it with a trivial nit comment on any PR.
+An "LGTM" inside the approval itself doesn't count as a comment. A push is a commit or a force-push.
 
-The table also reports two more numbers. A review round is a human
-non-author review or comment, then a push, then another human review or
-comment; we report the mean per PR and the share of PRs with at least one
-round. Human
-and bot comments count non-approval review bodies and inline comments
-alongside plain comments, excluding the author's own, and are reported as a mean per PR.
+A **review round** is a human review or comment, then a push, then another human review or comment. The table shows rounds per PR and the share of PRs with at least one.
 
-`--group-by depth` splits PRs on these classes: `changed-by-review` has at
-least one `changed_by_review` approval, `light-review` has a human approval
-but none `changed_by_review`, and `no-human-approval` has neither. On a repo where
-almost every PR gets some human approval, the plain `reviewed` split barely
-separates anything; `depth` is the split that does.
+`--group-by depth` splits PRs into `changed-by-review` (at least one such approval), `light-review` (a human approval, but none that changed the code) and `no-human-approval`. Where nearly every PR gets some approval, `--group-by reviewed` barely separates anything; `depth` does.
 
-### Speed
+### How fast did it move?
 
-| Metric | Definition |
+| Metric | Meaning |
 |---|---|
-| Review and approval timings | Time to first human review, time to first bot review, time to first approval, time to merge (from creation), and ready to merge (from the first "ready for review" event, or creation if the PR was never drafted). Each is reported as a median and a p75, in hours. |
-| `merged_within_1h`, `merged_within_24h` | The share of PRs merged within one hour, or 24 hours, of creation. |
-| `throughput_per_week` | PR count divided by the number of weeks in range; with `--group-by week` or `month`, the weeks of that period inside the range. The JSON output also breaks this down by ISO week. |
-| `size` | Additions plus deletions, reported as a median and a p75. |
+| Time to first human review / bot review / approval | Hours from creation, median and p75. |
+| Time to merge | Hours from creation to merge. |
+| Ready to merge | Hours from the first "ready for review" (or creation, if never a draft) to merge. |
+| Merged within 1h / 24h | Share of PRs merged that soon after creation. |
+| Throughput / week | PRs per week in the range, or in the period with `week`/`month`. |
+| Size | Lines added + deleted, median and p75. |
 
-`--group-by size` buckets PRs the same way (`xs` <100, `s` 100-299, `m`
-300-699, `l` 700+) so size can be read against outcomes: on `tryriot/parrot`
-the follow-up fix rate climbs from 1.9% for `xs` PRs to 14.3% for `m` PRs.
+### Can I set targets on these numbers?
 
-## Limits
+No. They're diagnostics. A faster approval or fewer review rounds says nothing about whether the shipped code was good, and a reviewer can raise the *changed by review* share with one nit per PR. Read the speed and review numbers next to the outcome numbers, never instead of them.
 
-- A fix PR whose first-parent commit subject has no `#N` in it is skipped
-  entirely for follow-up-fix attribution: a squash merge without the PR
-  number in its subject, or a stacked PR merged through another PR's
-  commit. On `tryriot/parrot` this was 6 of 481 fix PRs.
-- Blame attribution has some noise: a fix that only edits a line another
-  PR happened to also touch (e.g. an import line) gets credited to that
-  PR, whether or not that line caused the bug.
+## Can an agent or script use it?
 
-## Goodhart warning
+Yes:
 
-These are diagnostics, not targets. A single number here is easy to game:
-fewer review rounds or a faster approval says nothing about whether the code
-shipped was any good. Read the speed numbers next to the outcome numbers
-(revert rate, follow-up fix rate), never instead of them, and do not set a
-target on one metric in isolation.
+- **JSON when piped.** Output is JSON when stdout isn't a TTY. The default payload is a few KB; `--prs` adds per-PR facts.
+- **Self-describing.** Every metric key in `"groups"` has a one-line definition with its unit under `"definitions"`.
+- **Warnings are data.** A missing input (follow-up fixes without `--repo-path`), truncated GitHub data or a shortened window goes into a `"warnings"` array and to stderr. A group with no approvals still has null approval metrics and no warning.
+- **Exit codes.** `0` ok, `1` GitHub or git error (with one line on how to fix it), `2` bad flags or input.
+- **Quiet stderr.** Progress lines print only on a TTY or with `--verbose`.
 
-## Share it
+A shortened `--group-by size` payload (the real one has all four size groups and every metric key):
 
-For someone who doesn't want to clone the repo or install the package:
-
+```json
+{
+  "repo": "cli/cli", "since": "2026-08-01", "until": "2026-09-15",
+  "warnings": [],
+  "definitions": { "revert_rate": "Share of PRs later reverted by another PR (0-1).", "...": "..." },
+  "groups": {
+    "xs": { "count": 89, "revert_rate": 0.023, "followup_fix_rate": 0.023, "...": "..." },
+    "s":  { "count": 19, "revert_rate": 0.0,   "followup_fix_rate": 0.0,   "...": "..." }
+  }
+}
 ```
+
+## Why is the first run slow?
+
+GitHub's GraphQL API silently truncates PR timelines (commits, force-pushes, review requests) when one request covers more than a few PRs, and the response doesn't say so. The tool therefore fetches each timeline in its own request, four at a time. Reviews and comments still come in the bulk query; if one of those is truncated, the tool warns for that PR instead of under-counting.
+
+Everything is cached in `~/.cache/pr-outcomes/`. Past weeks are cached forever and only the current week is refetched. Blame results are cached per commit, team membership for a day.
+
+## What are the known limits?
+
+- A fix PR whose merge commit subject has no `#N` (a squash without the PR number, or a stacked PR merged through another) is skipped for follow-up-fix attribution.
+- A fix that only adds lines has nothing to blame, and a fix whose title doesn't start with `fix`, `hotfix` or `bugfix` is missed.
+- A fix that edits a line another PR happened to touch (an import, say) credits that PR, whether or not that line caused the bug, so blame attribution carries some noise.
+
+## How do I share it without installing?
+
+```sh
 bash scripts/build.sh
 ```
 
-This produces `dist/pr-outcomes`, a ~65 KB [Python zipapp](https://docs.python.org/3/library/zipapp.html)
-built from the standard library alone. It is not a native binary: the
-recipient needs [`uv`](https://docs.astral.sh/uv/) installed (it runs the
-zipapp under `uv run --python >=3.12`, which fetches a matching Python if
-none is on their machine) and `gh auth login` done. A local clone
-(`--repo-path`) is optional and only needed for follow-up-fix attribution.
-Send them `dist/pr-outcomes` and they run it exactly like the installed
-command:
+This builds `dist/pr-outcomes`, a ~65 KB [Python zipapp](https://docs.python.org/3/library/zipapp.html) that uses only the standard library. The recipient needs [`uv`](https://docs.astral.sh/uv/), which fetches a matching Python if needed, and `gh auth login`. They run it like the installed command; from this repository, that is `./dist/pr-outcomes OWNER/REPO`.
 
-```
-./pr-outcomes tryriot/parrot --since 2026-08-01
-```
+## How do I work on it?
 
-## Development
-
-```
+```sh
 python3 -m unittest discover -s tests
 ```
 
-Static types are checked with `pyright` (via `uvx`) as part of `tests/test_types.py`, so the unittest run above is the single gate for both.
+That one command runs the tests and the `pyright` type check (`tests/test_types.py`).
 
-`fetch.py` handles GitHub I/O and JSON normalisation. `metrics.py` is pure
-functions with no I/O, tested against hand-built fixtures in
-`tests/fixtures/`. `cli.py` wires the two together and renders the output.
+| File | Role |
+|---|---|
+| `pr_outcomes/fetch.py` | GitHub I/O and JSON normalisation |
+| `pr_outcomes/metrics.py` | Pure functions, no I/O, tested against fixtures in `tests/fixtures/` |
+| `pr_outcomes/cli.py` | Wires the two together and renders the output |
