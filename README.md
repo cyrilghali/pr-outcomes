@@ -12,7 +12,7 @@ It reads GitHub through the `gh` CLI and never writes anything.
 
 ## What does the output look like?
 
-Every PR merged into `cli/cli` between 1 August and 15 September 2026, split by how deep the review went:
+Every PR merged into `cli/cli`'s default branch between 1 August and 15 September 2026, split by how deep the review went:
 
 ```
 $ pr-outcomes cli/cli --since 2026-08-01 --until 2026-09-15 --group-by depth --repo-path ~/src/cli
@@ -161,9 +161,11 @@ Yes:
 
 - **JSON when piped.** Output is JSON when stdout isn't a TTY. The default payload is a few KB; `--prs` adds per-PR facts.
 - **Self-describing.** Every metric key in `"groups"` has a one-line definition with its unit under `"definitions"`.
-- **Warnings are data.** Anything that nulls a metric or shortens a window goes into a `"warnings"` array and to stderr.
+- **Warnings are data.** A missing input (follow-up fixes without `--repo-path`), truncated GitHub data or a shortened window goes into a `"warnings"` array and to stderr. A group with no approvals still has null approval metrics and no warning.
 - **Exit codes.** `0` ok, `1` GitHub or git error (with one line on how to fix it), `2` bad flags or input.
 - **Quiet stderr.** Progress lines print only on a TTY or with `--verbose`.
+
+A shortened `--group-by size` payload (the real one has all four size groups and every metric key):
 
 ```json
 {
@@ -195,7 +197,7 @@ Everything is cached in `~/.cache/pr-outcomes/`. Past weeks are cached forever a
 bash scripts/build.sh
 ```
 
-This builds `dist/pr-outcomes`, a ~65 KB [Python zipapp](https://docs.python.org/3/library/zipapp.html) that uses only the standard library. The recipient needs [`uv`](https://docs.astral.sh/uv/), which fetches a matching Python if needed, and `gh auth login`. They run it like the installed command: `./pr-outcomes OWNER/REPO`.
+This builds `dist/pr-outcomes`, a ~65 KB [Python zipapp](https://docs.python.org/3/library/zipapp.html) that uses only the standard library. The recipient needs [`uv`](https://docs.astral.sh/uv/), which fetches a matching Python if needed, and `gh auth login`. They run it like the installed command; from this repository, that is `./dist/pr-outcomes OWNER/REPO`.
 
 ## How do I work on it?
 
